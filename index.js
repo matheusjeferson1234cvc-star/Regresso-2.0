@@ -1,4 +1,4 @@
-require('dotenv').config(); // Puxa automaticamente as variáveis do arquivo .env
+require('dotenv').config(); // Puxa variáveis do .env
 
 const {
   Client,
@@ -63,16 +63,21 @@ const GuildConfigSchema = new mongoose.Schema({
 
 const GuildConfig = mongoose.model('GuildConfig', GuildConfigSchema);
 
-// Cache temporário do construtor /cv
+// Cache temporário para o /cv
 const cvCache = new Map();
 
 // Helper: Buscar ou criar configuração no MongoDB por Servidor
 async function getGuildData(guildId) {
-  let data = await GuildConfig.findOne({ guildId });
-  if (!data) {
-    data = await GuildConfig.create({ guildId });
+  try {
+    let data = await GuildConfig.findOne({ guildId });
+    if (!data) {
+      data = await GuildConfig.create({ guildId });
+    }
+    return data;
+  } catch (error) {
+    console.error('[ERRO MONGO] Falha ao consultar o banco:', error);
+    return null;
   }
-  return data;
 }
 
 // Lista de Cores Predefinidas
@@ -130,33 +135,7 @@ const commands = [
 ];
 
 client.once('ready', async () => {
-  console.log(`[SISTEMA] Bot inicializado como ${client.user.tag}`);
-
-  // Conectar ao MongoDB usando a variável do .env
-  try {
-    await mongoose.connect(process.env.MONGO_URI);
-    console.log('[BANCO DE DADOS] Conectado ao MongoDB Atlas com sucesso!');
-  } catch (err) {
-    console.error('[ERRO MONGODB] Falha ao conectar no banco de dados:', err);
-  }
-
-  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  try {
-    await rest.put(
-      Routes.applicationCommands(client.user.id),
-      { body: commands }
-    );
-    console.log('[SLASH] Comandos globais registrados!');
-  } catch (error) {
-    console.error('[ERRO] Falha ao registrar comandos:', error);
-  }
-});
-
-// Helper de Variáveis
-function parseVariables(text, member, guild) {
-  if (!text) return '';
-  return text
-    .replace(/{user}/g, `${member}`)
+  console.log(`[SISTEMA] Bot inicializado como ${client.user.tag}`);  // Conectar ao MongoDB if (process.env.MONGO_URI) { try { await mongoose.connect(process.env.MONGO_URI); console.log('[BANCO DE DADOS] Conectado ao MongoDB Atlas com sucesso!'); } catch (err) { console.error('[ERRO MONGODB] Falha na conexão:', err); } } else { console.warn('[AVISO] Variável MONGO_URI não informada no arquivo .env!'); }  // Registrar Comandos if (process.env.DISCORD_TOKEN) { const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN); try { await rest.put( Routes.applicationCommands(client.user.id), { body: commands } ); console.log('[SLASH] Comandos registrados com sucesso!'); } catch (error) { console.error('[ERRO] Falha ao registrar comandos slash:', error); } } });  // Helper de Variáveis function parseVariables(text, member, guild) { if (!text) return ''; return text .replace(/{user}/g, `${member}`)
     .replace(/{user\.tag}/g, member.user ? member.user.tag : member.tag || '')
     .replace(/{user\.id}/g, member.id)
     .replace(/{server}/g, guild.name)
@@ -165,7 +144,7 @@ function parseVariables(text, member, guild) {
 
 // Embed do Painel Principal
 function buildPainelEmbed(guild, db) {
-  const categoriesCount = db.ticketCategories.length;
+  const categoriesCount = db.ticketCategories ? db.ticketCategories.length : 0;
 
   return new EmbedBuilder()
     .setAuthor({ 
@@ -182,33 +161,17 @@ function buildPainelEmbed(guild, db) {
     .addFields(
       { 
         name: '🎨 IDENTIDADE VISUAL', 
-        value: `└ **Cor do Tema:** \`${db.themeColor}\` *(Sincronizado)*`, 
+        value: `└ **Cor do Tema:** \`${db.themeColor || '#57F287'}\` *(Sincronizado)*`, 
         inline: false 
       },
       { 
         name: '👋 BOAS-VINDAS & AUTOROLE', 
-        value: `├ **Canal:** ${db.welcomeChannel ? `<#${db.welcomeChannel}>` : '`❌ Desativado`'}\n├ **Cargo:** ${db.autoRole ? `<@&${db.autoRole}>` : '`❌ Desativado`'}\n└ **Banner:** ${db.welcomeBanner ? '`✅ Ativo`' : '`❌ Sem Imagem`'}`, 
-        inline: true 
-      },
-      { 
-        name: '🚪 MÓDULO DE SAÍDA', 
-        value: `├ **Canal:** ${db.leaveChannel ? `<#${db.leaveChannel}>` : '`❌ Desativado`'}\n└ **Banner:** ${db.leaveBanner ? '`✅ Ativo`' : '`❌ Sem Imagem`'}`, 
-        inline: true 
-      },
-      { name: '\u200B', value: '\u200B', inline: true },
-      { 
-        name: '🎟️ SISTEMA DE TICKETS', 
-        value: `├ **Categoria:** ${db.ticketCategory ? `<#${db.ticketCategory}>` : '`❌ Não definida`'}\n├ **Staff:** ${db.ticketSupportRole ? `<@&${db.ticketSupportRole}>` : '`❌ Não definido`'}\n└ **Categorias:** \`${categoriesCount} cadastrada(s)\``, 
-        inline: true 
-      },
-      { 
-        name: '📜 AUDITORIA & LOGS', 
-        value: `├ **Canal:** ${db.logChannel ? `<#${db.logChannel}>` : '`❌ Desativado`'}\n└ **Eventos:** \`Deletes / Edições / Bans\``, 
+        value: `├ **Canal:** ${db.welcomeChannel ? `<#${db.welcomeChannel}>` : '`❌ Desativado`'}\n├ **Cargo:** ${db.autoRole ? `<@&${db.autoRole}>` : '`❌ Desativado`'}\n└ **Banner:** ${db.welcomeBanner ? '`✅ Ativo`' : '`❌ Sem Imagem`'}`, inline: true }, { name: '🚪 MÓDULO DE SAÍDA', value: `├ **Canal:** ${db.leaveChannel ? `<#${db.leaveChannel}>` : '`❌ Desativado`'}\n└ **Banner:** ${db.leaveBanner ? '`✅ Ativo`' : '`❌ Sem Imagem`'}`, inline: true }, { name: '\u200B', value: '\u200B', inline: true }, { name: '🎟️ SISTEMA DE TICKETS', value: `├ **Categoria:** ${db.ticketCategory ? `<#${db.ticketCategory}>` : '`❌ Não definida`'}\n├ **Staff:** ${db.ticketSupportRole ? `<@&${db.ticketSupportRole}>` : '`❌ Não definido`'}\n└ **Categorias:** \`${categoriesCount} cadastrada(s)\``, inline: true }, { name: '📜 AUDITORIA & LOGS', value: `├ **Canal:** ${db.logChannel ? `<#${db.logChannel}>` : '`❌ Desativado`'}\n└ **Eventos:** \`Deletes / Edições / Bans\``, 
         inline: true 
       },
       { name: '\u200B', value: '\u200B', inline: true }
     )
-    .setColor(db.themeColor.startsWith('#') ? db.themeColor : '#57F287')
+    .setColor(db.themeColor && db.themeColor.startsWith('#') ? db.themeColor : '#57F287')
     .setThumbnail(client.user.displayAvatarURL())
     .setFooter({ text: 'Green Otimizações • Nuvem MongoDB Conectada', iconURL: client.user.displayAvatarURL() })
     .setTimestamp();
@@ -238,7 +201,7 @@ function buildCvBuilderComponents(userId, defaultColor) {
   const embedPreview = new EmbedBuilder()
     .setTitle(data.title)
     .setDescription(data.description)
-    .setColor(data.color.startsWith('#') ? data.color : '#57F287')
+    .setColor(data.color && data.color.startsWith('#') ? data.color : '#57F287')
     .setTimestamp();
 
   if (data.image && (data.image.startsWith('http://') || data.image.startsWith('https://'))) {
@@ -276,7 +239,12 @@ async function handleChannelLock(channel, guild, lock = true) {
 // Manipulação Global de Interações
 client.on('interactionCreate', async (interaction) => {
   try {
+    if (!interaction.guild) return;
+
     const db = await getGuildData(interaction.guild.id);
+    if (!db) {
+      return interaction.reply({ content: '❌ Erro de conexão com o Banco de Dados. Tente novamente em instantes.', ephemeral: true });
+    }
 
     // 1. Slash Commands
     if (interaction.isChatInputCommand()) {
@@ -451,38 +419,20 @@ client.on('interactionCreate', async (interaction) => {
         );
 
         if (existingChannel) {
-          return interaction.reply({ content: `⚠️ Você já tem um atendimento ativo em ${existingChannel}!`, ephemeral: true });
-        }
-
-        const permissionOverwrites = [
-          { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-          { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] }
-        ];
-
-        if (db.ticketSupportRole) {
-          permissionOverwrites.push({
-            id: db.ticketSupportRole,
-            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles]
-          });
-        }
-
-        const channel = await interaction.guild.channels.create({
-          name: `ticket-${interaction.user.username}`,
+          return interaction.reply({ content: `⚠️ Você já tem um atendimento ativo em ${existingChannel}!`, ephemeral: true }); }  const permissionOverwrites = [ { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] } ];  if (db.ticketSupportRole) { permissionOverwrites.push({ id: db.ticketSupportRole, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] }); }  const channel = await interaction.guild.channels.create({ name: `ticket-${interaction.user.username}`,
           type: ChannelType.GuildText,
           parent: db.ticketCategory,
           permissionOverwrites
         });
 
         const ticketPanelEmbed = new EmbedBuilder()
-          .setTitle(`🎟️ Atendimento: ${selectedCategory}`)
-          .addFields(
-            { name: '👤 Cliente', value: `${interaction.user}`, inline: true },
+          .setTitle(`🎟️ Atendimento: ${selectedCategory}`) .addFields( { name: '👤 Cliente', value: `${interaction.user}`, inline: true },
             { name: '📂 Categoria', value: `\`${selectedCategory}\``, inline: true },
             { name: '📌 Assunto', value: subject },
             { name: '📝 Detalhes do Pedido', value: reason },
             { name: '🛠️ Atendente Responsável', value: '`Nenhum (Aguardando Staff)`' }
           )
-          .setColor(db.ticketColor.startsWith('#') ? db.ticketColor : db.themeColor)
+          .setColor(db.ticketColor && db.ticketColor.startsWith('#') ? db.ticketColor : db.themeColor)
           .setTimestamp();
 
         const ticketButtons = new ActionRowBuilder().addComponents(
@@ -509,360 +459,7 @@ client.on('interactionCreate', async (interaction) => {
 
       if (interaction.customId === 'btn_unlock_quick') {
         await handleChannelLock(interaction.channel, interaction.guild, false);
-        return interaction.reply({ content: `🔓 O canal <#${interaction.channel.id}> foi **destrancado**.`, ephemeral: true });
-      }
-
-      if (interaction.customId === 'cv_btn_title') {
-        const modal = new ModalBuilder().setCustomId('modal_cv_title').setTitle('Editar Título da Embed');
-        const data = cvCache.get(interaction.user.id) || {};
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('cv_input_title').setLabel('Título').setStyle(TextInputStyle.Short).setValue(data.title || '').setRequired(true)
-          )
-        );
-        return interaction.showModal(modal);
-      }
-
-      if (interaction.customId === 'cv_btn_desc') {
-        const modal = new ModalBuilder().setCustomId('modal_cv_desc').setTitle('Editar Texto da Embed');
-        const data = cvCache.get(interaction.user.id) || {};
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('cv_input_desc').setLabel('Texto / Descrição').setStyle(TextInputStyle.Paragraph).setValue(data.description || '').setRequired(true)
-          )
-        );
-        return interaction.showModal(modal);
-      }
-
-      if (interaction.customId === 'cv_btn_image') {
-        const modal = new ModalBuilder().setCustomId('modal_cv_image').setTitle('URL do Banner / Imagem');
-        const data = cvCache.get(interaction.user.id) || {};
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('cv_input_image').setLabel('URL da Imagem (Opcional)').setStyle(TextInputStyle.Short).setValue(data.image || '').setRequired(false)
-          )
-        );
-        return interaction.showModal(modal);
-      }
-
-      if (interaction.customId === 'cv_btn_send') {
-        const cvData = cvCache.get(interaction.user.id);
-        if (!cvData) {
-          return interaction.reply({ content: '❌ Sessão expirada. Digite `/cv` novamente.', ephemeral: true });
-        }
-
-        const finalEmbed = new EmbedBuilder()
-          .setTitle(cvData.title)
-          .setDescription(cvData.description)
-          .setColor(cvData.color.startsWith('#') ? cvData.color : db.themeColor)
-          .setTimestamp();
-
-        if (cvData.image && (cvData.image.startsWith('http://') || cvData.image.startsWith('https://'))) {
-          finalEmbed.setImage(cvData.image);
-        }
-
-        await interaction.channel.send({ embeds: [finalEmbed] });
-        cvCache.delete(interaction.user.id);
-        return interaction.update({ content: '🚀 **Embed enviada no canal com sucesso!**', embeds: [], components: [] });
-      }
-
-      if (interaction.customId === 'btn_theme') {
-        const colorSelect = new StringSelectMenuBuilder()
-          .setCustomId('select_theme_color')
-          .setPlaceholder('🎨 Escolha uma cor para o tema do bot')
-          .addOptions(COLOR_OPTIONS);
-
-        return interaction.reply({
-          content: '🎨 **Selecione abaixo a cor do tema principal:**',
-          components: [new ActionRowBuilder().addComponents(colorSelect)],
-          ephemeral: true
-        });
-      }
-
-      if (interaction.customId === 'btn_welcome') {
-        const channelSelect = new ChannelSelectMenuBuilder()
-          .setCustomId('select_welcome_channel')
-          .setPlaceholder('📌 Selecione o canal de boas-vindas')
-          .addChannelTypes(ChannelType.GuildText);
-
-        const roleSelect = new RoleSelectMenuBuilder()
-          .setCustomId('select_autorole')
-          .setPlaceholder('🎭 Selecione o cargo automático (AutoRole)');
-
-        const btnEditMsg = new ButtonBuilder()
-          .setCustomId('btn_edit_welcome_msg')
-          .setLabel('Editar Texto & Banner')
-          .setEmoji('✍️')
-          .setStyle(ButtonStyle.Secondary);
-
-        const btnPreview = new ButtonBuilder()
-          .setCustomId('btn_preview_welcome')
-          .setLabel('👁️ Testar Prévia')
-          .setStyle(ButtonStyle.Success);
-
-        return interaction.reply({
-          content: '⚙️ **Boas-Vindas & AutoRole:**',
-          components: [
-            new ActionRowBuilder().addComponents(channelSelect),
-            new ActionRowBuilder().addComponents(roleSelect),
-            new ActionRowBuilder().addComponents(btnEditMsg, btnPreview)
-          ],
-          ephemeral: true
-        });
-      }
-
-      if (interaction.customId === 'btn_preview_welcome') {
-        const text = parseVariables(db.welcomeMessage, interaction.member, interaction.guild);
-        const embed = new EmbedBuilder()
-          .setTitle('👋 [PRÉVIA] Seja Bem-vindo(a)!')
-          .setDescription(text)
-          .setColor(db.themeColor.startsWith('#') ? db.themeColor : '#57F287')
-          .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
-          .setTimestamp();
-
-        if (db.welcomeBanner && (db.welcomeBanner.startsWith('http://') || db.welcomeBanner.startsWith('https://'))) {
-          embed.setImage(db.welcomeBanner);
-        }
-
-        return interaction.reply({ content: '🔍 **Pré-visualização de Boas-Vindas:**', embeds: [embed], ephemeral: true });
-      }
-
-      if (interaction.customId === 'btn_edit_welcome_msg') {
-        const modal = new ModalBuilder()
-          .setCustomId('modal_edit_welcome')
-          .setTitle('Configurar Boas-Vindas');
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('welcome_msg_text').setLabel('Texto ({user}, {server}, {members})').setStyle(TextInputStyle.Paragraph).setValue(db.welcomeMessage).setRequired(true)
-          ),
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('welcome_banner_url').setLabel('URL do Banner (Opcional)').setStyle(TextInputStyle.Short).setValue(db.welcomeBanner || '').setRequired(false)
-          )
-        );
-        return interaction.showModal(modal);
-      }
-
-      if (interaction.customId === 'btn_leave') {
-        const channelSelect = new ChannelSelectMenuBuilder()
-          .setCustomId('select_leave_channel')
-          .setPlaceholder('📌 Selecione o canal de saída')
-          .addChannelTypes(ChannelType.GuildText);
-
-        const btnEditMsg = new ButtonBuilder()
-          .setCustomId('btn_edit_leave_msg')
-          .setLabel('Editar Texto & Banner')
-          .setEmoji('✍️')
-          .setStyle(ButtonStyle.Secondary);
-
-        const btnPreview = new ButtonBuilder()
-          .setCustomId('btn_preview_leave')
-          .setLabel('👁️ Testar Prévia')
-          .setStyle(ButtonStyle.Success);
-
-        return interaction.reply({
-          content: '⚙️ **Configuração de Saída:**',
-          components: [
-            new ActionRowBuilder().addComponents(channelSelect),
-            new ActionRowBuilder().addComponents(btnEditMsg, btnPreview)
-          ],
-          ephemeral: true
-        });
-      }
-
-      if (interaction.customId === 'btn_preview_leave') {
-        const text = parseVariables(db.leaveMessage, interaction.member, interaction.guild);
-        const embed = new EmbedBuilder()
-          .setTitle('🚪 [PRÉVIA] Membro Saiu')
-          .setDescription(text)
-          .setColor('#ED4245')
-          .setTimestamp();
-
-        if (db.leaveBanner && (db.leaveBanner.startsWith('http://') || db.leaveBanner.startsWith('https://'))) {
-          embed.setImage(db.leaveBanner);
-        }
-
-        return interaction.reply({ content: '🔍 **Pré-visualização de Saída:**', embeds: [embed], ephemeral: true });
-      }
-
-      if (interaction.customId === 'btn_edit_leave_msg') {
-        const modal = new ModalBuilder()
-          .setCustomId('modal_edit_leave')
-          .setTitle('Configurar Mensagem de Saída');
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('leave_msg_text').setLabel('Texto ({user.tag}, {server})').setStyle(TextInputStyle.Paragraph).setValue(db.leaveMessage).setRequired(true)
-          ),
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('leave_banner_url').setLabel('URL do Banner (Opcional)').setStyle(TextInputStyle.Short).setValue(db.leaveBanner || '').setRequired(false)
-          )
-        );
-        return interaction.showModal(modal);
-      }
-
-      if (interaction.customId === 'btn_tickets') {
-        const categorySelect = new ChannelSelectMenuBuilder()
-          .setCustomId('select_ticket_category')
-          .setPlaceholder('📁 Categoria para criação dos canais')
-          .addChannelTypes(ChannelType.GuildCategory);
-
-        const supportRoleSelect = new RoleSelectMenuBuilder()
-          .setCustomId('select_ticket_role')
-          .setPlaceholder('🛠️ Cargo dos Atendentes / Staff');
-
-        const btnDesign = new ButtonBuilder()
-          .setCustomId('btn_edit_ticket_design')
-          .setLabel('Design & Banner')
-          .setEmoji('🎨')
-          .setStyle(ButtonStyle.Secondary);
-
-        const btnAddCat = new ButtonBuilder()
-          .setCustomId('btn_add_ticket_cat')
-          .setLabel('Adicionar Categoria')
-          .setEmoji('➕')
-          .setStyle(ButtonStyle.Primary);
-
-        const btnRemoveCat = new ButtonBuilder()
-          .setCustomId('btn_remove_ticket_cat')
-          .setLabel('Remover Categoria')
-          .setEmoji('🗑️')
-          .setStyle(ButtonStyle.Danger);
-
-        const btnSendTicketPanel = new ButtonBuilder()
-          .setCustomId('btn_send_ticket_panel')
-          .setLabel('Enviar Painel de Tickets Aqui')
-          .setEmoji('📩')
-          .setStyle(ButtonStyle.Success);
-
-        return interaction.reply({
-          content: '⚙️ **Gerenciamento do Módulo de Tickets:**',
-          components: [
-            new ActionRowBuilder().addComponents(categorySelect),
-            new ActionRowBuilder().addComponents(supportRoleSelect),
-            new ActionRowBuilder().addComponents(btnDesign, btnAddCat, btnRemoveCat),
-            new ActionRowBuilder().addComponents(btnSendTicketPanel)
-          ],
-          ephemeral: true
-        });
-      }
-
-      if (interaction.customId === 'btn_edit_ticket_design') {
-        const modal = new ModalBuilder()
-          .setCustomId('modal_edit_ticket_design')
-          .setTitle('Design & Banner do Ticket');
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('ticket_custom_title').setLabel('Título da Embed').setStyle(TextInputStyle.Short).setValue(db.ticketTitle).setRequired(true)
-          ),
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('ticket_custom_desc').setLabel('Descrição').setStyle(TextInputStyle.Paragraph).setValue(db.ticketDescription).setRequired(true)
-          ),
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('ticket_custom_color').setLabel('Cor Hexadecimal').setStyle(TextInputStyle.Short).setValue(db.ticketColor).setRequired(false)
-          ),
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('ticket_custom_banner').setLabel('URL do Banner (Opcional)').setStyle(TextInputStyle.Short).setValue(db.ticketBanner || '').setRequired(false)
-          )
-        );
-
-        return interaction.showModal(modal);
-      }
-
-      if (interaction.customId === 'btn_add_ticket_cat') {
-        if (db.ticketCategories.length >= 25) {
-          return interaction.reply({ content: '❌ Limite de 25 categorias de ticket atingido!', ephemeral: true });
-        }
-
-        const modal = new ModalBuilder()
-          .setCustomId('modal_add_ticket_cat')
-          .setTitle('Adicionar Categoria de Ticket');
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('cat_label').setLabel('Nome da Categoria').setStyle(TextInputStyle.Short).setPlaceholder('Ex: Suporte Técnico').setRequired(true)
-          ),
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('cat_desc').setLabel('Descrição Curta').setStyle(TextInputStyle.Short).setPlaceholder('Ex: Atendimento para dúvidas').setRequired(true)
-          ),
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('cat_emoji').setLabel('Emoji (Opcional)').setStyle(TextInputStyle.Short).setPlaceholder('Ex: 🛠️').setRequired(false)
-          )
-        );
-
-        return interaction.showModal(modal);
-      }
-
-      if (interaction.customId === 'btn_remove_ticket_cat') {
-        if (db.ticketCategories.length === 0) {
-          return interaction.reply({ content: '❌ Nenhuma categoria para remover!', ephemeral: true });
-        }
-
-        const selectMenu = new StringSelectMenuBuilder()
-          .setCustomId('select_delete_ticket_cat')
-          .setPlaceholder('🗑️ Selecione a categoria para excluir')
-          .addOptions(
-            db.ticketCategories.map(cat => ({
-              label: cat.label,
-              description: cat.description,
-              value: cat.id,
-              emoji: cat.emoji
-            }))
-          );
-
-        return interaction.reply({
-          content: 'Selecione abaixo a categoria que deseja **remover**:',
-          components: [new ActionRowBuilder().addComponents(selectMenu)],
-          ephemeral: true
-        });
-      }
-
-      if (interaction.customId === 'btn_send_ticket_panel') {
-        if (!db.ticketCategory) {
-          return interaction.reply({ content: '❌ Defina a categoria antes de enviar o painel!', ephemeral: true });
-        }
-
-        if (db.ticketCategories.length === 0) {
-          return interaction.reply({ content: '❌ Adicione pelo menos uma categoria antes!', ephemeral: true });
-        }
-
-        const ticketEmbed = new EmbedBuilder()
-          .setTitle(db.ticketTitle)
-          .setDescription(db.ticketDescription)
-          .setColor(db.ticketColor.startsWith('#') ? db.ticketColor : db.themeColor)
-          .setFooter({ text: 'Central de Atendimento VIP' });
-
-        if (db.ticketBanner && (db.ticketBanner.startsWith('http://') || db.ticketBanner.startsWith('https://'))) {
-          ticketEmbed.setImage(db.ticketBanner);
-        }
-
-        const selectMenu = new StringSelectMenuBuilder()
-          .setCustomId('select_ticket_type')
-          .setPlaceholder('▼ Selecione uma opção para abrir seu ticket')
-          .addOptions(
-            db.ticketCategories.map(cat => ({
-              label: cat.label,
-              description: cat.description,
-              value: cat.id,
-              emoji: cat.emoji
-            }))
-          );
-
-        await interaction.channel.send({ embeds: [ticketEmbed], components: [new ActionRowBuilder().addComponents(selectMenu)] });
-        return interaction.reply({ content: '✅ Painel enviado no canal!', ephemeral: true });
-      }
-
-      if (interaction.customId === 'btn_claim_ticket') {
-        const isStaff = interaction.member.permissions.has(PermissionFlagsBits.Administrator) || 
-                        (db.ticketSupportRole && interaction.member.roles.cache.has(db.ticketSupportRole));
-
-        if (!isStaff) {
-          return interaction.reply({ content: '❌ Apenas a equipe autorizada pode assumir tickets!', ephemeral: true });
-        }
-
-        const embed = EmbedBuilder.from(interaction.message.embeds[0]);
-        embed.spliceFields(4, 1, { name: '🛠️ Atendente Responsável', value: `${interaction.user}` });
+        return interaction.reply({ content: `🔓 O canal <#${interaction.channel.id}> foi **destrancado**.`, ephemeral: true }); }  if (interaction.customId === 'cv_btn_title') { const modal = new ModalBuilder().setCustomId('modal_cv_title').setTitle('Editar Título da Embed'); const data = cvCache.get(interaction.user.id) \vert{}\vert{} {}; modal.addComponents( new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('cv_input_title').setLabel('Título').setStyle(TextInputStyle.Short).setValue(data.title \vert{}\vert{} '').setRequired(true) ) ); return interaction.showModal(modal); }  if (interaction.customId === 'cv_btn_desc') { const modal = new ModalBuilder().setCustomId('modal_cv_desc').setTitle('Editar Texto da Embed'); const data = cvCache.get(interaction.user.id) \vert{}\vert{} {}; modal.addComponents( new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('cv_input_desc').setLabel('Texto / Descrição').setStyle(TextInputStyle.Paragraph).setValue(data.description \vert{}\vert{} '').setRequired(true) ) ); return interaction.showModal(modal); }  if (interaction.customId === 'cv_btn_image') { const modal = new ModalBuilder().setCustomId('modal_cv_image').setTitle('URL do Banner / Imagem'); const data = cvCache.get(interaction.user.id) \vert{}\vert{} {}; modal.addComponents( new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('cv_input_image').setLabel('URL da Imagem (Opcional)').setStyle(TextInputStyle.Short).setValue(data.image \vert{}\vert{} '').setRequired(false) ) ); return interaction.showModal(modal); }  if (interaction.customId === 'cv_btn_send') { const cvData = cvCache.get(interaction.user.id); if (!cvData) { return interaction.reply({ content: '❌ Sessão expirada. Digite `/cv` novamente.', ephemeral: true }); }  const finalEmbed = new EmbedBuilder() .setTitle(cvData.title) .setDescription(cvData.description) .setColor(cvData.color && cvData.color.startsWith('#') ? cvData.color : db.themeColor) .setTimestamp();  if (cvData.image && (cvData.image.startsWith('http://') \vert{}\vert{} cvData.image.startsWith('https://'))) { finalEmbed.setImage(cvData.image); }  await interaction.channel.send({ embeds: [finalEmbed] }); cvCache.delete(interaction.user.id); return interaction.update({ content: '🚀 **Embed enviada no canal com sucesso!**', embeds: [], components: [] }); }  if (interaction.customId === 'btn_theme') { const colorSelect = new StringSelectMenuBuilder() .setCustomId('select_theme_color') .setPlaceholder('🎨 Escolha uma cor para o tema do bot') .addOptions(COLOR_OPTIONS);  return interaction.reply({ content: '🎨 **Selecione abaixo a cor do tema principal:**', components: [new ActionRowBuilder().addComponents(colorSelect)], ephemeral: true }); }  if (interaction.customId === 'btn_welcome') { const channelSelect = new ChannelSelectMenuBuilder() .setCustomId('select_welcome_channel') .setPlaceholder('📌 Selecione o canal de boas-vindas') .addChannelTypes(ChannelType.GuildText);  const roleSelect = new RoleSelectMenuBuilder() .setCustomId('select_autorole') .setPlaceholder('🎭 Selecione o cargo automático (AutoRole)');  const btnEditMsg = new ButtonBuilder() .setCustomId('btn_edit_welcome_msg') .setLabel('Editar Texto & Banner') .setEmoji('✍️') .setStyle(ButtonStyle.Secondary);  const btnPreview = new ButtonBuilder() .setCustomId('btn_preview_welcome') .setLabel('👁️ Testar Prévia') .setStyle(ButtonStyle.Success);  return interaction.reply({ content: '⚙️ **Boas-Vindas & AutoRole:**', components: [ new ActionRowBuilder().addComponents(channelSelect), new ActionRowBuilder().addComponents(roleSelect), new ActionRowBuilder().addComponents(btnEditMsg, btnPreview) ], ephemeral: true }); }  if (interaction.customId === 'btn_preview_welcome') { const text = parseVariables(db.welcomeMessage, interaction.member, interaction.guild); const embed = new EmbedBuilder() .setTitle('👋 [PRÉVIA] Seja Bem-vindo(a)!') .setDescription(text) .setColor(db.themeColor && db.themeColor.startsWith('#') ? db.themeColor : '#57F287') .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true })) .setTimestamp();  if (db.welcomeBanner && (db.welcomeBanner.startsWith('http://') \vert{}\vert{} db.welcomeBanner.startsWith('https://'))) { embed.setImage(db.welcomeBanner); }  return interaction.reply({ content: '🔍 **Pré-visualização de Boas-Vindas:**', embeds: [embed], ephemeral: true }); }  if (interaction.customId === 'btn_edit_welcome_msg') { const modal = new ModalBuilder() .setCustomId('modal_edit_welcome') .setTitle('Configurar Boas-Vindas');  modal.addComponents( new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('welcome_msg_text').setLabel('Texto ({user}, {server}, {members})').setStyle(TextInputStyle.Paragraph).setValue(db.welcomeMessage).setRequired(true) ), new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('welcome_banner_url').setLabel('URL do Banner (Opcional)').setStyle(TextInputStyle.Short).setValue(db.welcomeBanner \vert{}\vert{} '').setRequired(false) ) ); return interaction.showModal(modal); }  if (interaction.customId === 'btn_leave') { const channelSelect = new ChannelSelectMenuBuilder() .setCustomId('select_leave_channel') .setPlaceholder('📌 Selecione o canal de saída') .addChannelTypes(ChannelType.GuildText);  const btnEditMsg = new ButtonBuilder() .setCustomId('btn_edit_leave_msg') .setLabel('Editar Texto & Banner') .setEmoji('✍️') .setStyle(ButtonStyle.Secondary);  const btnPreview = new ButtonBuilder() .setCustomId('btn_preview_leave') .setLabel('👁️ Testar Prévia') .setStyle(ButtonStyle.Success);  return interaction.reply({ content: '⚙️ **Configuração de Saída:**', components: [ new ActionRowBuilder().addComponents(channelSelect), new ActionRowBuilder().addComponents(btnEditMsg, btnPreview) ], ephemeral: true }); }  if (interaction.customId === 'btn_preview_leave') { const text = parseVariables(db.leaveMessage, interaction.member, interaction.guild); const embed = new EmbedBuilder() .setTitle('🚪 [PRÉVIA] Membro Saiu') .setDescription(text) .setColor('#ED4245') .setTimestamp();  if (db.leaveBanner && (db.leaveBanner.startsWith('http://') \vert{}\vert{} db.leaveBanner.startsWith('https://'))) { embed.setImage(db.leaveBanner); }  return interaction.reply({ content: '🔍 **Pré-visualização de Saída:**', embeds: [embed], ephemeral: true }); }  if (interaction.customId === 'btn_edit_leave_msg') { const modal = new ModalBuilder() .setCustomId('modal_edit_leave') .setTitle('Configurar Mensagem de Saída');  modal.addComponents( new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('leave_msg_text').setLabel('Texto ({user.tag}, {server})').setStyle(TextInputStyle.Paragraph).setValue(db.leaveMessage).setRequired(true) ), new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('leave_banner_url').setLabel('URL do Banner (Opcional)').setStyle(TextInputStyle.Short).setValue(db.leaveBanner \vert{}\vert{} '').setRequired(false) ) ); return interaction.showModal(modal); }  if (interaction.customId === 'btn_tickets') { const categorySelect = new ChannelSelectMenuBuilder() .setCustomId('select_ticket_category') .setPlaceholder('📁 Categoria para criação dos canais') .addChannelTypes(ChannelType.GuildCategory);  const supportRoleSelect = new RoleSelectMenuBuilder() .setCustomId('select_ticket_role') .setPlaceholder('🛠️ Cargo dos Atendentes / Staff');  const btnDesign = new ButtonBuilder() .setCustomId('btn_edit_ticket_design') .setLabel('Design & Banner') .setEmoji('🎨') .setStyle(ButtonStyle.Secondary);  const btnAddCat = new ButtonBuilder() .setCustomId('btn_add_ticket_cat') .setLabel('Adicionar Categoria') .setEmoji('➕') .setStyle(ButtonStyle.Primary);  const btnRemoveCat = new ButtonBuilder() .setCustomId('btn_remove_ticket_cat') .setLabel('Remover Categoria') .setEmoji('🗑️') .setStyle(ButtonStyle.Danger);  const btnSendTicketPanel = new ButtonBuilder() .setCustomId('btn_send_ticket_panel') .setLabel('Enviar Painel de Tickets Aqui') .setEmoji('📩') .setStyle(ButtonStyle.Success);  return interaction.reply({ content: '⚙️ **Gerenciamento do Módulo de Tickets:**', components: [ new ActionRowBuilder().addComponents(categorySelect), new ActionRowBuilder().addComponents(supportRoleSelect), new ActionRowBuilder().addComponents(btnDesign, btnAddCat, btnRemoveCat), new ActionRowBuilder().addComponents(btnSendTicketPanel) ], ephemeral: true }); }  if (interaction.customId === 'btn_edit_ticket_design') { const modal = new ModalBuilder() .setCustomId('modal_edit_ticket_design') .setTitle('Design & Banner do Ticket');  modal.addComponents( new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('ticket_custom_title').setLabel('Título da Embed').setStyle(TextInputStyle.Short).setValue(db.ticketTitle).setRequired(true) ), new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('ticket_custom_desc').setLabel('Descrição').setStyle(TextInputStyle.Paragraph).setValue(db.ticketDescription).setRequired(true) ), new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('ticket_custom_color').setLabel('Cor Hexadecimal').setStyle(TextInputStyle.Short).setValue(db.ticketColor).setRequired(false) ), new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('ticket_custom_banner').setLabel('URL do Banner (Opcional)').setStyle(TextInputStyle.Short).setValue(db.ticketBanner \vert{}\vert{} '').setRequired(false) ) );  return interaction.showModal(modal); }  if (interaction.customId === 'btn_add_ticket_cat') { if (db.ticketCategories.length >= 25) { return interaction.reply({ content: '❌ Limite de 25 categorias de ticket atingido!', ephemeral: true }); }  const modal = new ModalBuilder() .setCustomId('modal_add_ticket_cat') .setTitle('Adicionar Categoria de Ticket');  modal.addComponents( new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('cat_label').setLabel('Nome da Categoria').setStyle(TextInputStyle.Short).setPlaceholder('Ex: Suporte Técnico').setRequired(true) ), new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('cat_desc').setLabel('Descrição Curta').setStyle(TextInputStyle.Short).setPlaceholder('Ex: Atendimento para dúvidas').setRequired(true) ), new ActionRowBuilder().addComponents( new TextInputBuilder().setCustomId('cat_emoji').setLabel('Emoji (Opcional)').setStyle(TextInputStyle.Short).setPlaceholder('Ex: 🛠️').setRequired(false) ) );  return interaction.showModal(modal); }  if (interaction.customId === 'btn_remove_ticket_cat') { if (db.ticketCategories.length === 0) { return interaction.reply({ content: '❌ Nenhuma categoria para remover!', ephemeral: true }); }  const selectMenu = new StringSelectMenuBuilder() .setCustomId('select_delete_ticket_cat') .setPlaceholder('🗑️ Selecione a categoria para excluir') .addOptions( db.ticketCategories.map(cat => ({ label: cat.label, description: cat.description, value: cat.id, emoji: cat.emoji })) );  return interaction.reply({ content: 'Selecione abaixo a categoria que deseja **remover**:', components: [new ActionRowBuilder().addComponents(selectMenu)], ephemeral: true }); }  if (interaction.customId === 'btn_send_ticket_panel') { if (!db.ticketCategory) { return interaction.reply({ content: '❌ Defina a categoria antes de enviar o painel!', ephemeral: true }); }  if (db.ticketCategories.length === 0) { return interaction.reply({ content: '❌ Adicione pelo menos uma categoria antes!', ephemeral: true }); }  const ticketEmbed = new EmbedBuilder() .setTitle(db.ticketTitle) .setDescription(db.ticketDescription) .setColor(db.ticketColor && db.ticketColor.startsWith('#') ? db.ticketColor : db.themeColor) .setFooter({ text: 'Central de Atendimento VIP' });  if (db.ticketBanner && (db.ticketBanner.startsWith('http://') \vert{}\vert{} db.ticketBanner.startsWith('https://'))) { ticketEmbed.setImage(db.ticketBanner); }  const selectMenu = new StringSelectMenuBuilder() .setCustomId('select_ticket_type') .setPlaceholder('▼ Selecione uma opção para abrir seu ticket') .addOptions( db.ticketCategories.map(cat => ({ label: cat.label, description: cat.description, value: cat.id, emoji: cat.emoji })) );  await interaction.channel.send({ embeds: [ticketEmbed], components: [new ActionRowBuilder().addComponents(selectMenu)] }); return interaction.reply({ content: '✅ Painel enviado no canal!', ephemeral: true }); }  if (interaction.customId === 'btn_claim_ticket') { const isStaff = interaction.member.permissions.has(PermissionFlagsBits.Administrator) \vert{}\vert{} (db.ticketSupportRole && interaction.member.roles.cache.has(db.ticketSupportRole));  if (!isStaff) { return interaction.reply({ content: '❌ Apenas a equipe autorizada pode assumir tickets!', ephemeral: true }); }  const embed = EmbedBuilder.from(interaction.message.embeds[0]); embed.spliceFields(4, 1, { name: '🛠️ Atendente Responsável', value: `${interaction.user}` });
 
         const disabledRow = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId('btn_claimed').setLabel(`Assumido por ${interaction.user.username}`).setEmoji('✅').setStyle(ButtonStyle.Secondary).setDisabled(true),
@@ -970,8 +567,7 @@ client.on('interactionCreate', async (interaction) => {
         const categoryName = category ? category.label : 'Atendimento';
 
         const modal = new ModalBuilder()
-          .setCustomId(`modal_open_ticket_form:${selectedCatId}`)
-          .setTitle(`Atendimento: ${categoryName.slice(0, 30)}`);
+          .setCustomId(`modal_open_ticket_form:${selectedCatId}`) .setTitle(`Atendimento: ${categoryName.slice(0, 30)}`);
 
         modal.addComponents(
           new ActionRowBuilder().addComponents(
@@ -1030,9 +626,10 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// Eventos do Servidor
+// Eventos de Entradas e Saídas
 client.on('guildMemberAdd', async (member) => {
   const db = await getGuildData(member.guild.id);
+  if (!db) return;
 
   if (db.autoRole) {
     await member.roles.add(db.autoRole).catch(() => {});
@@ -1046,7 +643,7 @@ client.on('guildMemberAdd', async (member) => {
       const embed = new EmbedBuilder()
         .setTitle('👋 Seja Bem-vindo(a)!')
         .setDescription(text)
-        .setColor(db.themeColor.startsWith('#') ? db.themeColor : '#57F287')
+        .setColor(db.themeColor && db.themeColor.startsWith('#') ? db.themeColor : '#57F287')
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
         .setTimestamp();
 
@@ -1061,6 +658,7 @@ client.on('guildMemberAdd', async (member) => {
 
 client.on('guildMemberRemove', async (member) => {
   const db = await getGuildData(member.guild.id);
+  if (!db) return;
 
   if (db.leaveChannel) {
     const channel = member.guild.channels.cache.get(db.leaveChannel);
@@ -1085,7 +683,7 @@ client.on('guildMemberRemove', async (member) => {
 client.on('messageDelete', async (message) => {
   if (message.author?.bot || !message.guild) return;
   const db = await getGuildData(message.guild.id);
-  if (!db.logChannel) return;
+  if (!db || !db.logChannel) return;
 
   const logChannel = message.guild.channels.cache.get(db.logChannel);
   if (!logChannel) return;
@@ -1093,8 +691,7 @@ client.on('messageDelete', async (message) => {
   const embed = new EmbedBuilder()
     .setTitle('🗑️ Mensagem Deletada')
     .addFields(
-      { name: 'Autor', value: `${message.author.tag} (\`${message.author.id}\`)`, inline: true },
-      { name: 'Canal', value: `<#${message.channel.id}>`, inline: true },
+      { name: 'Autor', value: `${message.author.tag} (\`${message.author.id}\`)`, inline: true }, { name: 'Canal', value: `<#${message.channel.id}>`, inline: true },
       { name: 'Conteúdo', value: message.content ? `\`\`\`${message.content}\`\`\`` : '*Sem texto*' }
     )
     .setColor('#ED4245')
@@ -1108,7 +705,7 @@ client.on('messageUpdate', async (oldMessage, newMessage) => {
   if (oldMessage.content === newMessage.content) return;
 
   const db = await getGuildData(oldMessage.guild.id);
-  if (!db.logChannel) return;
+  if (!db || !db.logChannel) return;
 
   const logChannel = oldMessage.guild.channels.cache.get(db.logChannel);
   if (!logChannel) return;
@@ -1116,8 +713,7 @@ client.on('messageUpdate', async (oldMessage, newMessage) => {
   const embed = new EmbedBuilder()
     .setTitle('✏️ Mensagem Editada')
     .addFields(
-      { name: 'Autor', value: `${oldMessage.author.tag} (\`${oldMessage.author.id}\`)`, inline: true },
-      { name: 'Canal', value: `<#${oldMessage.channel.id}>`, inline: true },
+      { name: 'Autor', value: `${oldMessage.author.tag} (\`${oldMessage.author.id}\`)`, inline: true }, { name: 'Canal', value: `<#${oldMessage.channel.id}>`, inline: true },
       { name: 'Antes', value: `\`\`\`${oldMessage.content || 'Vazio'}\`\`\`` },
       { name: 'Depois', value: `\`\`\`${newMessage.content || 'Vazio'}\`\`\`` }
     )
@@ -1129,7 +725,7 @@ client.on('messageUpdate', async (oldMessage, newMessage) => {
 
 client.on('guildBanAdd', async (ban) => {
   const db = await getGuildData(ban.guild.id);
-  if (!db.logChannel) return;
+  if (!db || !db.logChannel) return;
 
   const logChannel = ban.guild.channels.cache.get(db.logChannel);
   if (!logChannel) return;
@@ -1145,7 +741,7 @@ client.on('guildBanAdd', async (ban) => {
 
 client.on('guildBanRemove', async (ban) => {
   const db = await getGuildData(ban.guild.id);
-  if (!db.logChannel) return;
+  if (!db || !db.logChannel) return;
 
   const logChannel = ban.guild.channels.cache.get(db.logChannel);
   if (!logChannel) return;
