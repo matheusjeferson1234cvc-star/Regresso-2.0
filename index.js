@@ -24,26 +24,29 @@ const client = new Client({
     ]
 });
 
-// Armazenamento das configurações
+// Estrutura de armazenamento de configurações por servidor
 const config = {
     welcomeChannel: null,
     exitChannel: null,
     autoRole: null,
     ticketCategory: null,
-    tempEmbedChannel: {} // Armazena o canal temporário de cada usuário
+    // Armazena temporariamente a escolha do canal de cada usuário para os modais
+    userSelectedChannel: new Map()
 };
 
 client.on('ready', () => {
     console.log(`🤖 Bot online com sucesso como ${client.user.tag}`);
 });
 
-// Evento: Boas-Vindas + Cargo Automático
+// --- EVENTOS DE MEMBROS ---
+
+// Boas-Vindas + Autorole
 client.on('guildMemberAdd', async (member) => {
     try {
         if (config.autoRole) {
             const role = member.guild.roles.cache.get(config.autoRole);
             if (role) {
-                await member.roles.add(role).catch(err => console.error('Erro de permissão ao adicionar cargo:', err.message));
+                await member.roles.add(role).catch(err => console.error('Permissão insuficiente para atribuir cargo:', err.message));
             }
         }
 
@@ -63,7 +66,7 @@ client.on('guildMemberAdd', async (member) => {
     }
 });
 
-// Evento: Saída
+// Saída de Membro
 client.on('guildMemberRemove', async (member) => {
     try {
         if (config.exitChannel) {
@@ -81,7 +84,8 @@ client.on('guildMemberRemove', async (member) => {
     }
 });
 
-// Comando /painel-administrativo
+// --- COMANDO DO PAINEL ADMINISTRATIVO ---
+
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
@@ -111,24 +115,25 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// Gerenciador Principal de Interações
+// --- GERENCIADOR DE INTERAÇÕES ---
+
 client.on('interactionCreate', async (interaction) => {
     try {
-        // --- 1. SELEÇÃO DE ABAS NO MENU PRINCIPAL ---
+        // 1. MENU PRINCIPAL DE SELEÇÃO DE ABAS
         if (interaction.isStringSelectMenu() && interaction.customId === 'admin_panel_select') {
             const selected = interaction.values[0];
 
             if (selected === 'tab_welcome') {
-                const btnWelcome = new ButtonBuilder().setCustomId('btn_open_welcome_select').setLabel('Configurar Entrada').setStyle(ButtonStyle.Primary);
-                const btnExit = new ButtonBuilder().setCustomId('btn_open_exit_select').setLabel('Configurar Saída').setStyle(ButtonStyle.Danger);
-                const btnRole = new ButtonBuilder().setCustomId('btn_open_role_select').setLabel('Configurar Autorole').setStyle(ButtonStyle.Success);
+                const btnWelcome = new ButtonBuilder().setCustomId('btn_open_welcome_select').setLabel('Canal Entrada').setStyle(ButtonStyle.Primary);
+                const btnExit = new ButtonBuilder().setCustomId('btn_open_exit_select').setLabel('Canal Saída').setStyle(ButtonStyle.Danger);
+                const btnRole = new ButtonBuilder().setCustomId('btn_open_role_select').setLabel('Cargo Autorole').setStyle(ButtonStyle.Success);
 
                 const embed = new EmbedBuilder()
                     .setTitle('👋 Boas-Vindas, Saída & Autorole')
                     .setDescription(`• **Entrada:** ${config.welcomeChannel ? `<#${config.welcomeChannel}>` : 'Não configurado'}\n• **Saída:** ${config.exitChannel ? `<#${config.exitChannel}>` : 'Não configurado'}\n• **Autorole:** ${config.autoRole ? `<@&${config.autoRole}>` : 'Não configurado'}`)
                     .setColor('#2b2d31');
 
-                await interaction.reply({
+                return await interaction.reply({
                     embeds: [embed],
                     components: [new ActionRowBuilder().addComponents(btnWelcome, btnExit, btnRole)],
                     ephemeral: true
@@ -141,7 +146,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setPlaceholder('Selecionar Categoria para Tickets')
                     .setChannelTypes(ChannelType.GuildCategory);
 
-                await interaction.reply({
+                return await interaction.reply({
                     content: '📁 Selecione a categoria onde os tickets serão criados:',
                     components: [new ActionRowBuilder().addComponents(selectCategory)],
                     ephemeral: true
@@ -154,7 +159,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setPlaceholder('Selecionar Canal para Regras')
                     .setChannelTypes(ChannelType.GuildText);
 
-                await interaction.reply({
+                return await interaction.reply({
                     content: '📜 Selecione o canal onde as regras serão enviadas:',
                     components: [new ActionRowBuilder().addComponents(selectChannel)],
                     ephemeral: true
@@ -167,7 +172,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setPlaceholder('Selecionar Canal da Embed')
                     .setChannelTypes(ChannelType.GuildText);
 
-                await interaction.reply({
+                return await interaction.reply({
                     content: '🎨 Selecione o canal onde deseja enviar a Embed personalizada:',
                     components: [new ActionRowBuilder().addComponents(selectChannel)],
                     ephemeral: true
@@ -175,28 +180,27 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // --- 2. BOTÕES AUXILIARES PARA EVITAR CONFLITO DE MENUS ---
+        // 2. BOTÕES DE ACIONAMENTO
         if (interaction.isButton()) {
             if (interaction.customId === 'btn_open_welcome_select') {
                 const select = new ChannelSelectMenuBuilder().setCustomId('select_welcome_channel').setPlaceholder('Escolha o canal de entrada').setChannelTypes(ChannelType.GuildText);
-                await interaction.reply({ components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+                return await interaction.reply({ components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
             }
 
             if (interaction.customId === 'btn_open_exit_select') {
                 const select = new ChannelSelectMenuBuilder().setCustomId('select_exit_channel').setPlaceholder('Escolha o canal de saída').setChannelTypes(ChannelType.GuildText);
-                await interaction.reply({ components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+                return await interaction.reply({ components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
             }
 
             if (interaction.customId === 'btn_open_role_select') {
                 const select = new RoleSelectMenuBuilder().setCustomId('select_auto_role').setPlaceholder('Escolha o cargo automático');
-                await interaction.reply({ components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+                return await interaction.reply({ components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
             }
 
-            if (interaction.customId.startsWith('btn_trigger_embed_modal_')) {
-                const targetChannelId = interaction.customId.replace('btn_trigger_embed_modal_', '');
-
+            // Exibir Modal do Formulário de Embed sem duplicar resposta
+            if (interaction.customId === 'btn_trigger_embed_modal') {
                 const modal = new ModalBuilder()
-                    .setCustomId(`modal_send_embed_${targetChannelId}`)
+                    .setCustomId('modal_send_embed')
                     .setTitle('Criar Embed Personalizada');
 
                 const titleInput = new TextInputBuilder().setCustomId('embed_title').setLabel('Título').setStyle(TextInputStyle.Short).setRequired(true);
@@ -211,63 +215,64 @@ client.on('interactionCreate', async (interaction) => {
                     new ActionRowBuilder().addComponents(imageInput)
                 );
 
-                await interaction.showModal(modal);
+                return await interaction.showModal(modal);
             }
 
-            if (interaction.customId.startsWith('btn_trigger_rules_modal_')) {
-                const targetChannelId = interaction.customId.replace('btn_trigger_rules_modal_', '');
-
+            // Exibir Modal das Regras
+            if (interaction.customId === 'btn_trigger_rules_modal') {
                 const modal = new ModalBuilder()
-                    .setCustomId(`modal_send_rules_${targetChannelId}`)
+                    .setCustomId('modal_send_rules')
                     .setTitle('Escrever Regras');
 
                 const contentInput = new TextInputBuilder().setCustomId('rules_text').setLabel('Texto das Regras').setStyle(TextInputStyle.Paragraph).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(contentInput));
 
-                await interaction.showModal(modal);
+                return await interaction.showModal(modal);
             }
         }
 
-        // --- 3. MENUS DE SELEÇÃO DE CANAIS E CARGOS ---
+        // 3. MENUS DE SELEÇÃO DE CANAL E CARGO
         if (interaction.isChannelSelectMenu()) {
             if (interaction.customId === 'select_welcome_channel') {
                 config.welcomeChannel = interaction.values[0];
-                await interaction.reply({ content: `✅ Canal de entrada definido para <#${config.welcomeChannel}>!`, ephemeral: true });
+                return await interaction.reply({ content: `✅ Canal de entrada definido para <#${config.welcomeChannel}>!`, ephemeral: true });
             }
 
             if (interaction.customId === 'select_exit_channel') {
                 config.exitChannel = interaction.values[0];
-                await interaction.reply({ content: `✅ Canal de saída definido para <#${config.exitChannel}>!`, ephemeral: true });
+                return await interaction.reply({ content: `✅ Canal de saída definido para <#${config.exitChannel}>!`, ephemeral: true });
             }
 
             if (interaction.customId === 'select_ticket_category') {
                 config.ticketCategory = interaction.values[0];
-                await interaction.reply({ content: `✅ Categoria de tickets definida para <#${config.ticketCategory}>!`, ephemeral: true });
+                return await interaction.reply({ content: `✅ Categoria de tickets definida para <#${config.ticketCategory}>!`, ephemeral: true });
             }
 
             if (interaction.customId === 'select_rules_channel') {
-                const targetChannelId = interaction.values[0];
+                config.userSelectedChannel.set(interaction.user.id, interaction.values[0]);
+
                 const btn = new ButtonBuilder()
-                    .setCustomId(`btn_trigger_rules_modal_${targetChannelId}`)
+                    .setCustomId('btn_trigger_rules_modal')
                     .setLabel('Escrever Texto das Regras')
                     .setStyle(ButtonStyle.Success);
 
-                await interaction.reply({
-                    content: `✅ Canal selecionado: <#${targetChannelId}>. Clique abaixo para abrir o formulário:`,
+                return await interaction.reply({
+                    content: `✅ Canal selecionado: <#${interaction.values[0]}>. Clique abaixo para abrir o formulário:`,
                     components: [new ActionRowBuilder().addComponents(btn)],
                     ephemeral: true
                 });
             }
 
             if (interaction.customId === 'select_embed_channel') {
-                const targetChannelId = interaction.values[0];
+                config.userSelectedChannel.set(interaction.user.id, interaction.values[0]);
+
                 const btn = new ButtonBuilder()
-                    .setCustomId(`btn_trigger_embed_modal_${targetChannelId}`)
+                    .setCustomId('btn_trigger_embed_modal')
                     .setLabel('Abrir Formulário da Embed')
                     .setStyle(ButtonStyle.Primary);
 
-                await interaction.reply({
-                    content: `✅ Canal selecionado: <#${targetChannelId}>. Clique no botão abaixo para preencher os dados da Embed:`,
+                return await interaction.reply({
+                    content: `✅ Canal selecionado: <#${interaction.values[0]}>. Clique no botão abaixo para preencher os dados da Embed:`,
                     components: [new ActionRowBuilder().addComponents(btn)],
                     ephemeral: true
                 });
@@ -277,18 +282,18 @@ client.on('interactionCreate', async (interaction) => {
         if (interaction.isRoleSelectMenu()) {
             if (interaction.customId === 'select_auto_role') {
                 config.autoRole = interaction.values[0];
-                await interaction.reply({ content: `✅ Cargo automático definido para <@&${config.autoRole}>!`, ephemeral: true });
+                return await interaction.reply({ content: `✅ Cargo automático definido para <@&${config.autoRole}>!`, ephemeral: true });
             }
         }
 
-        // --- 4. SUBMISSÃO DE MODAIS ---
+        // 4. SUBMISSÃO DOS FORMULÁRIOS (MODAIS)
         if (interaction.isModalSubmit()) {
-            if (interaction.customId.startsWith('modal_send_rules_')) {
-                const channelId = interaction.customId.replace('modal_send_rules_', '');
+            if (interaction.customId === 'modal_send_rules') {
+                const channelId = config.userSelectedChannel.get(interaction.user.id);
                 const rulesText = interaction.fields.getTextInputValue('rules_text');
                 const channel = interaction.guild.channels.cache.get(channelId);
 
-                if (!channel) return interaction.reply({ content: '❌ Canal não encontrado.', ephemeral: true });
+                if (!channel) return await interaction.reply({ content: '❌ Canal não encontrado.', ephemeral: true });
 
                 const embed = new EmbedBuilder()
                     .setTitle('📜 Regras do Servidor')
@@ -296,18 +301,18 @@ client.on('interactionCreate', async (interaction) => {
                     .setColor('#2b2d31');
 
                 await channel.send({ embeds: [embed] });
-                await interaction.reply({ content: '✅ Regras enviadas com sucesso!', ephemeral: true });
+                return await interaction.reply({ content: '✅ Regras enviadas com sucesso!', ephemeral: true });
             }
 
-            if (interaction.customId.startsWith('modal_send_embed_')) {
-                const channelId = interaction.customId.replace('modal_send_embed_', '');
+            if (interaction.customId === 'modal_send_embed') {
+                const channelId = config.userSelectedChannel.get(interaction.user.id);
                 const title = interaction.fields.getTextInputValue('embed_title');
                 const desc = interaction.fields.getTextInputValue('embed_desc');
                 let color = interaction.fields.getTextInputValue('embed_color').trim() || '#2b2d31';
                 const image = interaction.fields.getTextInputValue('embed_image').trim();
 
                 const channel = interaction.guild.channels.cache.get(channelId);
-                if (!channel) return interaction.reply({ content: '❌ Canal não encontrado.', ephemeral: true });
+                if (!channel) return await interaction.reply({ content: '❌ Canal não encontrado.', ephemeral: true });
 
                 if (color && !color.startsWith('#')) color = `#${color}`;
                 if (!/^#[0-9A-F]{6}$/i.test(color)) color = '#2b2d31';
@@ -322,7 +327,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 await channel.send({ embeds: [embed] });
-                await interaction.reply({ content: '✅ Embed enviada com sucesso!', ephemeral: true });
+                return await interaction.reply({ content: '✅ Embed enviada com sucesso!', ephemeral: true });
             }
         }
     } catch (error) {
