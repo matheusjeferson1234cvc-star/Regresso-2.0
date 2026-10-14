@@ -20,7 +20,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMembers // Lembre-se de ativar "Server Members Intent" no Developer Portal
     ]
 });
 
@@ -30,7 +30,6 @@ const config = {
     exitChannel: null,
     autoRole: null,
     ticketCategory: null,
-    // Armazena temporariamente a escolha do canal de cada usuário para os modais
     userSelectedChannel: new Map()
 };
 
@@ -197,7 +196,6 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.reply({ components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
             }
 
-            // Exibir Modal do Formulário de Embed sem duplicar resposta
             if (interaction.customId === 'btn_trigger_embed_modal') {
                 const modal = new ModalBuilder()
                     .setCustomId('modal_send_embed')
@@ -218,7 +216,6 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.showModal(modal);
             }
 
-            // Exibir Modal das Regras
             if (interaction.customId === 'btn_trigger_rules_modal') {
                 const modal = new ModalBuilder()
                     .setCustomId('modal_send_rules')
@@ -291,6 +288,8 @@ client.on('interactionCreate', async (interaction) => {
             if (interaction.customId === 'modal_send_rules') {
                 const channelId = config.userSelectedChannel.get(interaction.user.id);
                 const rulesText = interaction.fields.getTextInputValue('rules_text');
+
+                if (!channelId) return await interaction.reply({ content: '❌ Nenhum canal foi selecionado previamente.', ephemeral: true });
                 const channel = interaction.guild.channels.cache.get(channelId);
 
                 if (!channel) return await interaction.reply({ content: '❌ Canal não encontrado.', ephemeral: true });
@@ -311,7 +310,9 @@ client.on('interactionCreate', async (interaction) => {
                 let color = interaction.fields.getTextInputValue('embed_color').trim() || '#2b2d31';
                 const image = interaction.fields.getTextInputValue('embed_image').trim();
 
+                if (!channelId) return await interaction.reply({ content: '❌ Nenhum canal foi selecionado previamente.', ephemeral: true });
                 const channel = interaction.guild.channels.cache.get(channelId);
+
                 if (!channel) return await interaction.reply({ content: '❌ Canal não encontrado.', ephemeral: true });
 
                 if (color && !color.startsWith('#')) color = `#${color}`;
