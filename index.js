@@ -67,7 +67,6 @@ const GuildConfigSchema = new mongoose.Schema({
 
 const GuildConfig = mongoose.model('GuildConfig', GuildConfigSchema);
 
-// Helper para buscar ou criar registro no MongoDB com garantia de reconexão
 async function getGuildData(guildId) {
   try {
     if (mongoose.connection.readyState !== 1 && process.env.MONGO_URI) {
@@ -82,7 +81,6 @@ async function getGuildData(guildId) {
   }
 }
 
-// Opções de Cores Predefinidas
 const COLOR_OPTIONS = [
   { label: 'Verde Esmeralda', description: 'Tom verde vivo', value: '#57F287', emoji: '🟢' },
   { label: 'Azul Elétrico', description: 'Padrão Discord', value: '#5865F2', emoji: '🔵' },
@@ -94,7 +92,6 @@ const COLOR_OPTIONS = [
   { label: 'Dark / Escuro', description: 'Tom escuro', value: '#2F3136', emoji: '⬛' }
 ];
 
-// Comandos Slash
 const commands = [
   new SlashCommandBuilder()
     .setName('painel')
@@ -125,31 +122,34 @@ const commands = [
     .addIntegerOption(opt => opt.setName('quantidade').setDescription('Número de mensagens (1 a 100).').setMinValue(1).setMaxValue(100).setRequired(true))
 ];
 
-// Inicialização do Bot
+// INICIALIZAÇÃO E REGISTRO INSTANTÂNEO DE COMANDOS
 client.once(Events.ClientReady, async () => {
   console.log(`[SISTEMA] Bot inicializado com sucesso como ${client.user.tag}`);
-  
+
+  // Conexão Assíncrona com MongoDB Atlas
   if (process.env.MONGO_URI) {
-    try {
-      await mongoose.connect(process.env.MONGO_URI);
-      console.log('[BANCO] MongoDB Atlas Conectado com sucesso!');
-    } catch (err) {
-      console.error('[ERRO CONEXAO MONGO]:', err.message);
-    }
+    mongoose.connect(process.env.MONGO_URI)
+      .then(() => console.log('[BANCO] MongoDB Atlas Conectado!'))
+      .catch(err => console.error('[ERRO CONEXAO MONGO]:', err.message));
   }
 
+  // Registro de Comandos Slash (Instantâneo se GUILD_ID for informado)
   if (process.env.DISCORD_TOKEN) {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try {
-      await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-      console.log('[SLASH] Comandos globais registrados com sucesso!');
+      if (process.env.GUILD_ID) {
+        await rest.put(Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID), { body: commands });
+        console.log(`[SLASH] Comandos registrados INSTANTANEAMENTE no servidor (${process.env.GUILD_ID})!`);
+      } else {
+        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+        console.log('[SLASH] Comandos globais registrados (Pode levar até 1h para atualizar se for global).');
+      }
     } catch (error) {
       console.error('[ERRO REGISTRO SLASH]:', error.message);
     }
   }
 });
 
-// Construtor Visual do Painel Principal
 function buildPainelEmbed(guild, db) {
   const isMongoConnected = mongoose.connection.readyState === 1;
   const themeColor = db?.themeColor && db.themeColor.startsWith('#') ? db.themeColor : '#2F3136';
@@ -187,14 +187,12 @@ function buildPainelButtons() {
   return [rowConfig1, rowConfig2];
 }
 
-// Interações
 client.on('interactionCreate', async (interaction) => {
   try {
     if (!interaction.guild) return;
     let db = await getGuildData(interaction.guild.id);
     if (!db) return interaction.reply({ content: '❌ Erro ao conectar ao MongoDB Atlas. Verifique as credenciais.', ephemeral: true });
 
-    // 1. SLASH COMMANDS
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'painel') {
         return interaction.reply({ embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons(), ephemeral: true });
@@ -257,7 +255,6 @@ client.on('interactionCreate', async (interaction) => {
       }
     }
 
-    // 2. MODAIS
     if (interaction.isModalSubmit()) {
       if (interaction.customId === 'modal_cv') {
         const title = interaction.fields.getTextInputValue('cv_title');
@@ -308,7 +305,6 @@ client.on('interactionCreate', async (interaction) => {
       }
     }
 
-    // 3. BOTÕES
     if (interaction.isButton()) {
       if (interaction.customId === 'btn_refresh_panel') {
         const updatedDb = await getGuildData(interaction.guild.id);
@@ -436,7 +432,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: `✅ Ticket criado em ${channel}!`, ephemeral: true });
       }
 
-      // FECHAR TICKET E SALVAR TRANSCRIÇÃO EM LOGS
       if (interaction.customId === 'btn_close_ticket') {
         await interaction.reply({ content: '🔒 Gerando transcrição e encerrando ticket em 5 segundos...' });
 
@@ -489,7 +484,6 @@ client.on('interactionCreate', async (interaction) => {
       }
     }
 
-    // 4. SELECT MENUS
     if (interaction.isChannelSelectMenu()) {
       const val = interaction.values[0];
       if (interaction.customId === 'select_welcome_channel') { db.welcomeChannel = val; db.markModified('welcomeChannel'); }
@@ -527,7 +521,6 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// EVENTOS DE MEMBROS (BOAS-VINDAS E SAÍDA)
 client.on('guildMemberAdd', async (member) => {
   const db = await getGuildData(member.guild.id);
   if (!db) return;
@@ -593,3 +586,4 @@ process.on('unhandledRejection', r => console.error('[UNHANDLED REJECTION]:', r)
 process.on('uncaughtException', e => console.error('[UNCAUGHT EXCEPTION]:', e));
 
 client.login(process.env.DISCORD_TOKEN);
+
