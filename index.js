@@ -12,13 +12,11 @@ const {
   ChannelSelectMenuBuilder,
   RoleSelectMenuBuilder,
   ChannelType,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
   SlashCommandBuilder,
   PermissionFlagsBits,
   REST,
-  Routes
+  Routes,
+  Events
 } = require('discord.js');
 const mongoose = require('mongoose');
 
@@ -39,25 +37,25 @@ const GuildConfigSchema = new mongoose.Schema({
   guildId: { type: String, required: true, unique: true },
   themeColor: { type: String, default: '#57F287' },
   welcomeChannel: { type: String, default: null },
-  welcomeMessage: { type: String, default: 'Olá {user}, seja bem-vindo(a) ao **{server}**! Atualmente somos **{members}** membros.' },
+  welcomeMessage: { type: String, default: 'Olá {user}, seja bem-vindo(a) ao **{server}**!' },
   welcomeBanner: { type: String, default: null },
   welcomeColor: { type: String, default: '#57F287' },
   leaveChannel: { type: String, default: null },
-  leaveMessage: { type: String, default: 'O membro **{user.tag}** saiu do servidor **{server}**.' },
+  leaveMessage: { type: String, default: 'O membro **{user.tag}** saiu do servidor.' },
   leaveBanner: { type: String, default: null },
   leaveColor: { type: String, default: '#ED4245' },
   autoRole: { type: String, default: null },
+  ticketChannel: { type: String, default: null },
   ticketCategory: { type: String, default: null },
   ticketSupportRole: { type: String, default: null },
-  ticketTitle: { type: String, default: '🎟️ Central de Atendimento & Suporte' },
-  ticketDescription: { type: String, default: 'Selecione abaixo o departamento desejado para abrir seu atendimento privado.' },
+  ticketTitle: { type: String, default: '🎟️ Central de Atendimento' },
+  ticketDescription: { type: String, default: 'Selecione a opção desejada para abrir seu atendimento.' },
   ticketColor: { type: String, default: '#57F287' },
-  ticketBanner: { type: String, default: null },
   ticketCategories: {
     type: Array,
     default: [
-      { id: 'cat_duvidas', label: 'Dúvidas Gerais', description: 'Tire suas dúvidas sobre o servidor ou serviços.', emoji: '❓' },
-      { id: 'cat_compras', label: 'Atendimento / Compras', description: 'Suporte dedicado para vendas e orçamentos.', emoji: '📦' }
+      { id: 'cat_duvidas', label: 'Dúvidas Gerais', description: 'Tire suas dúvidas.', emoji: '❓' },
+      { id: 'cat_suporte', label: 'Suporte Técnico', description: 'Atendimento técnico.', emoji: '🛠️' }
     ]
   },
   logChannel: { type: String, default: null }
@@ -65,162 +63,83 @@ const GuildConfigSchema = new mongoose.Schema({
 
 const GuildConfig = mongoose.model('GuildConfig', GuildConfigSchema);
 
-// Cache temporário para o /cv
-const cvCache = new Map();
-
-// Helper: Buscar ou criar configuração no MongoDB
 async function getGuildData(guildId) {
   try {
     if (mongoose.connection.readyState !== 1) {
-      return {
-        guildId,
-        themeColor: '#57F287',
-        welcomeColor: '#57F287',
-        leaveColor: '#ED4245',
-        ticketColor: '#57F287',
-        ticketCategories: [],
-        save: async () => {}
-      };
+      return { guildId, themeColor: '#57F287', welcomeColor: '#57F287', leaveColor: '#ED4245', ticketColor: '#57F287', ticketCategories: [], save: async () => {} };
     }
     let data = await GuildConfig.findOne({ guildId });
-    if (!data) {
-      data = await GuildConfig.create({ guildId });
-    }
+    if (!data) data = await GuildConfig.create({ guildId });
     return data;
   } catch (error) {
-    console.error('[ERRO MONGO] Falha ao consultar banco:', error.message);
+    console.error('[ERRO MONGO]:', error.message);
     return null;
   }
 }
 
-// Lista de Cores Predefinidas
 const COLOR_OPTIONS = [
-  { label: 'Verde Esmeralda', description: 'Tom verde vivo e moderno', value: '#57F287', emoji: '🟢' },
-  { label: 'Azul Elétrico', description: 'Padrão clássico do Discord', value: '#5865F2', emoji: '🔵' },
-  { label: 'Roxo Cyberpunk', description: 'Tom roxo destacado e elegante', value: '#9B59B6', emoji: '🟣' },
-  { label: 'Vermelho Carmim', description: 'Tom vermelho forte e marcante', value: '#ED4245', emoji: '🔴' },
+  { label: 'Verde Esmeralda', description: 'Tom verde vivo', value: '#57F287', emoji: '🟢' },
+  { label: 'Azul Elétrico', description: 'Padrão Discord', value: '#5865F2', emoji: '🔵' },
+  { label: 'Roxo Cyberpunk', description: 'Tom roxo destacado', value: '#9B59B6', emoji: '🟣' },
+  { label: 'Vermelho Carmim', description: 'Tom vermelho forte', value: '#ED4245', emoji: '🔴' },
   { label: 'Amarelo Ouro', description: 'Tom amarelo brilhante', value: '#FEE75C', emoji: '🟡' },
   { label: 'Laranja Vivo', description: 'Tom laranja vibrante', value: '#E67E22', emoji: '🟠' },
-  { label: 'Branco Minimalista', description: 'Aparência limpa e clara', value: '#FFFFFF', emoji: '⚪' },
-  { label: 'Dark / Escuro', description: 'Tom escuro integrado ao tema', value: '#2F3136', emoji: '⬛' },
-  { label: 'Código Personalizado (Hex)', description: 'Informe um código Hexadecimal livre', value: 'custom_hex', emoji: '✏️' }
+  { label: 'Branco Minimalista', description: 'Aparência limpa', value: '#FFFFFF', emoji: '⚪' },
+  { label: 'Dark / Escuro', description: 'Tom escuro', value: '#2F3136', emoji: '⬛' }
 ];
 
-// Comandos Slash
 const commands = [
   new SlashCommandBuilder()
     .setName('painel')
-    .setDescription('Abre o painel administrativo avançado do bot.')
+    .setDescription('Abre o painel administrativo do bot.')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
-    .setName('cv')
-    .setDescription('Abre o construtor interativo de embed personalizada.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
-  new SlashCommandBuilder()
     .setName('ban')
-    .setDescription('Banir um usuário do servidor com motivo.')
+    .setDescription('Banir um usuário do servidor e registrar em logs.')
     .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
     .addUserOption(opt => opt.setName('usuario').setDescription('Usuário a ser banido.').setRequired(true))
     .addStringOption(opt => opt.setName('motivo').setDescription('Motivo do banimento.').setRequired(false)),
   new SlashCommandBuilder()
     .setName('lock')
-    .setDescription('Tranca o canal mantendo o histórico liberado.')
+    .setDescription('Tranca o canal.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
   new SlashCommandBuilder()
     .setName('unlock')
-    .setDescription('Destranca o canal e libera o envio de mensagens.')
+    .setDescription('Destranca o canal.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
   new SlashCommandBuilder()
     .setName('clear')
-    .setDescription('Limpa mensagens do chat com filtros.')
+    .setDescription('Limpa mensagens do chat.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .addIntegerOption(opt => opt.setName('quantidade').setDescription('Número de mensagens (1 a 100).').setMinValue(1).setMaxValue(100).setRequired(true))
-    .addUserOption(opt => opt.setName('usuario').setDescription('Filtrar por usuário.').setRequired(false))
-    .addBooleanOption(opt => opt.setName('apenas_bots').setDescription('Apagar apenas mensagens de bots.').setRequired(false))
 ];
 
-client.once('ready', async () => {
+client.once(Events.ClientReady, async () => {
   console.log(`[SISTEMA] Bot inicializado com sucesso como ${client.user.tag}`);
-
   if (process.env.MONGO_URI) {
-    try {
-      await mongoose.connect(process.env.MONGO_URI);
-      console.log('[BANCO DE DADOS] Conectado ao MongoDB Atlas com sucesso!');
-    } catch (err) {
-      console.error('[ERRO MONGO] Falha ao conectar:', err.message);
-    }
+    await mongoose.connect(process.env.MONGO_URI).then(() => console.log('[BANCO] MongoDB Atlas Conectado com sucesso!')).catch(err => console.error(err.message));
   }
-
   if (process.env.DISCORD_TOKEN) {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    try {
-      await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-      console.log('[SLASH] Comandos registrados com sucesso!');
-    } catch (error) {
-      console.error('[ERRO SLASH] Falha ao registrar comandos:', error.message);
-    }
+    await rest.put(Routes.applicationCommands(client.user.id), { body: commands }).catch(err => console.error(err.message));
   }
 });
 
-// Helper de Variáveis
-function parseVariables(text, member, guild) {
-  if (!text) return '';
-  return text
-    .replace(/{user}/g, `${member}`)
-    .replace(/{user\.tag}/g, member.user ? member.user.tag : member.tag || '')
-    .replace(/{user\.id}/g, member.id)
-    .replace(/{server}/g, guild.name)
-    .replace(/{members}/g, guild.memberCount);
-}
-
-// 👑 EMBED DO PAINEL PRINCIPAL
 function buildPainelEmbed(guild, db) {
-  const categoriesCount = db.ticketCategories ? db.ticketCategories.length : 0;
   const isMongoConnected = mongoose.connection.readyState === 1;
-
   return new EmbedBuilder()
-    .setAuthor({ 
-      name: `SISTEMA DE GESTÃO • ${guild.name.toUpperCase()}`, 
-      iconURL: guild.iconURL({ dynamic: true }) || client.user.displayAvatarURL() 
-    })
+    .setAuthor({ name: `GESTAO • ${guild.name.toUpperCase()}`, iconURL: guild.iconURL({ dynamic: true }) || client.user.displayAvatarURL() })
     .setTitle('⚡ Painel de Controle Principal')
-    .setDescription(
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `**Gerenciamento Central do Servidor**\n` +
-      `Utilize os botões interativos abaixo para personalizar e administrar os módulos ativos.\n\n` +
-      `**Status do Banco:** ${isMongoConnected ? '🟢 `Sincronizado (MongoDB Atlas)`' : '🔴 `Offline (Modo Temporário)`'}\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-    )
+    .setDescription(`> Gerencie as configurações do servidor diretamente neste painel único.\n\n**Status Banco:** ${isMongoConnected ? '🟢 `Conectado (MongoDB Atlas)`' : '🔴 `Offline`'}`)
     .addFields(
-      { 
-        name: '🎨 IDENTIDADE VISUAL', 
-        value: `└ **Cor do Tema:** \`${db.themeColor || '#57F287'}\``, 
-        inline: false 
-      },
-      { 
-        name: '👋 MÓDULO BOAS-VINDAS', 
-        value: `├ **Canal:** ${db.welcomeChannel ? `<#${db.welcomeChannel}>` : '`❌ Desativado`'}\n├ **Cor Embed:** \`${db.welcomeColor || '#57F287'}\` \n└ **AutoRole:** ${db.autoRole ? `<@&${db.autoRole}>` : '`❌ Desativado`'}`, 
-        inline: true 
-      },
-      { 
-        name: '🚪 MÓDULO SAÍDA', 
-        value: `├ **Canal:** ${db.leaveChannel ? `<#${db.leaveChannel}>` : '`❌ Desativado`'}\n└ **Cor Embed:** \`${db.leaveColor || '#ED4245'}\``, 
-        inline: true 
-      },
-      { 
-        name: '🎟️ CENTRAL DE TICKETS', 
-        value: `├ **Categoria:** ${db.ticketCategory ? `<#${db.ticketCategory}>` : '`❌ Não definida`'}\n├ **Atendentes:** ${db.ticketSupportRole ? `<@&${db.ticketSupportRole}>` : '`❌ Não definido`'}\n├ **Cor Embed:** \`${db.ticketColor || '#57F287'}\` \n└ **Departamentos:** \`${categoriesCount} cadastrado(s)\``, 
-        inline: false 
-      },
-      { 
-        name: '📜 AUDITORIA & LOGS', 
-        value: `└ **Canal de Registros:** ${db.logChannel ? `<#${db.logChannel}>` : '`❌ Desativado`'}`, 
-        inline: false 
-      }
+      { name: '🎨 Cor do Tema', value: `\`${db.themeColor || '#57F287'}\``, inline: true },
+      { name: '👋 Boas-Vindas', value: `Canal: ${db.welcomeChannel ? `<#${db.welcomeChannel}>` : '`Desativado`'}\nAutoRole: ${db.autoRole ? `<@&${db.autoRole}>` : '`Nenhum`'}`, inline: true },
+      { name: '🚪 Saída', value: `Canal: ${db.leaveChannel ? `<#${db.leaveChannel}>` : '`Desativado`'}\nCor: \`${db.leaveColor || '#ED4245'}\``, inline: true },
+      { name: '🎟️ Tickets', value: `Envio: ${db.ticketChannel ? `<#${db.ticketChannel}>` : '`Não definido`'}\nCategoria: ${db.ticketCategory ? `<#${db.ticketCategory}>` : '`Não definida`'}`, inline: false },
+      { name: '📜 Registros / Logs', value: `Canal: ${db.logChannel ? `<#${db.logChannel}>` : '`Desativado`'}`, inline: false }
     )
     .setColor(db.themeColor && db.themeColor.startsWith('#') ? db.themeColor : '#57F287')
-    .setThumbnail(guild.iconURL({ dynamic: true }) || client.user.displayAvatarURL())
-    .setFooter({ text: `${client.user.username} • Painel Administrativo Pro`, iconURL: client.user.displayAvatarURL() })
+    .setFooter({ text: `${client.user.username} • Clique nos botões para alterar cada sistema` })
     .setTimestamp();
 }
 
@@ -233,67 +152,9 @@ function buildPainelButtons() {
     new ButtonBuilder().setCustomId('btn_theme').setLabel('Tema').setEmoji('🎨').setStyle(ButtonStyle.Secondary)
   );
 
-  const rowQuickActions = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('btn_lock_quick').setLabel('Trancar Chat').setEmoji('🔒').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId('btn_unlock_quick').setLabel('Destrancar Chat').setEmoji('🔓').setStyle(ButtonStyle.Success)
-  );
-
-  return [rowConfig, rowQuickActions];
+  return [rowConfig];
 }
 
-// Construtor Visual /cv
-function buildCvBuilderComponents(userId, defaultColor) {
-  const data = cvCache.get(userId) || { title: '📌 Título do Anúncio', description: 'Escreva seu texto aqui...', color: defaultColor, image: null, targetChannel: null };
-
-  const embedPreview = new EmbedBuilder()
-    .setTitle(data.title)
-    .setDescription(data.description)
-    .setColor(data.color && data.color.startsWith('#') ? data.color : '#57F287')
-    .setFooter({ text: data.targetChannel ? `Canal de destino selecionado` : `Nenhum canal selecionado (enviará no canal atual)` })
-    .setTimestamp();
-
-  if (data.image && (data.image.startsWith('http://') || data.image.startsWith('https://'))) {
-    embedPreview.setImage(data.image);
-  }
-
-  const rowChannel = new ActionRowBuilder().addComponents(
-    new ChannelSelectMenuBuilder()
-      .setCustomId('cv_select_target_channel')
-      .setPlaceholder('📢 Selecionar canal onde a mensagem será enviada')
-      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-  );
-
-  const colorSelect = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId('cv_select_color')
-      .setPlaceholder('🎨 Escolher cor desta mensagem')
-      .addOptions(COLOR_OPTIONS)
-  );
-
-  const rowButtons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('cv_btn_title').setLabel('Título').setEmoji('✏️').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('cv_btn_desc').setLabel('Texto').setEmoji('📝').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('cv_btn_image').setLabel('Banner').setEmoji('🖼️').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('cv_btn_send').setLabel('Enviar Anúncio').setEmoji('🚀').setStyle(ButtonStyle.Success)
-  );
-
-  return { embeds: [embedPreview], components: [rowChannel, colorSelect, rowButtons] };
-}
-
-// Helper Lock/Unlock
-async function handleChannelLock(channel, guild, lock = true) {
-  await channel.permissionOverwrites.edit(guild.roles.everyone, {
-    ViewChannel: true,
-    ReadMessageHistory: true,
-    SendMessages: !lock,
-    SendMessagesInThreads: !lock,
-    CreatePublicThreads: !lock,
-    CreatePrivateThreads: !lock,
-    AddReactions: !lock
-  });
-}
-
-// Evento Global de Interações
 client.on('interactionCreate', async (interaction) => {
   try {
     if (!interaction.guild) return;
@@ -302,43 +163,18 @@ client.on('interactionCreate', async (interaction) => {
     // 1. Slash Commands
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'painel') {
-        const embed = buildPainelEmbed(interaction.guild, db);
-        const components = buildPainelButtons();
-        return interaction.reply({ embeds: [embed], components, ephemeral: true });
-      }
-
-      if (interaction.commandName === 'cv') {
-        cvCache.set(interaction.user.id, {
-          title: '📌 Novo Anúncio',
-          description: 'Escreva a mensagem personalizada aqui usando os botões abaixo.',
-          color: db.themeColor,
-          image: null,
-          targetChannel: null
-        });
-
-        const cvPayload = buildCvBuilderComponents(interaction.user.id, db.themeColor);
-        return interaction.reply({
-          content: '🛠️ **Construtor Visual de Embed (/cv):**',
-          embeds: cvPayload.embeds,
-          components: cvPayload.components,
-          ephemeral: true
-        });
+        return interaction.reply({ embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons(), ephemeral: true });
       }
 
       if (interaction.commandName === 'ban') {
         const targetUser = interaction.options.getUser('usuario');
-        const reason = interaction.options.getString('motivo') || 'Sem motivo informado';
+        const reason = interaction.options.getString('motivo') || 'Nenhum motivo informado.';
 
         const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
-        if (!member) {
-          return interaction.reply({ content: '❌ Usuário não encontrado no servidor.', ephemeral: true });
-        }
+        if (!member) return interaction.reply({ content: '❌ O usuário informado não está no servidor.', ephemeral: true });
+        if (!member.bannable) return interaction.reply({ content: '❌ Não tenho permissão suficiente para banir este membro.', ephemeral: true });
 
-        if (!member.bannable) {
-          return interaction.reply({ content: '❌ Não tenho permissão para banir este usuário.', ephemeral: true });
-        }
-
-        await member.ban({ reason: `${reason} \vert{} Por:${interaction.user.tag}` });
+        await member.ban({ reason: `${reason} | Por: ${interaction.user.tag}` });
 
         if (db.logChannel) {
           const logChan = interaction.guild.channels.cache.get(db.logChannel);
@@ -346,9 +182,9 @@ client.on('interactionCreate', async (interaction) => {
             const logEmbed = new EmbedBuilder()
               .setTitle('🔨 Membro Banido')
               .addFields(
-                { name: '👤 Usuário Banido', value: `${targetUser.tag} (\`${targetUser.id}\`)` },
-                { name: '🛡️ Autor do Ban', value: `${interaction.user}` },
-                { name: '📌 Motivo', value: reason }
+                { name: '👤 Usuário Banido', value: `${targetUser.tag} (\`${targetUser.id}\`)`, inline: true },
+                { name: '🛡️ Mod Autor', value: `${interaction.user}`, inline: true },
+                { name: '📌 Motivo', value: reason, inline: false }
               )
               .setColor('#ED4245')
               .setTimestamp();
@@ -356,553 +192,137 @@ client.on('interactionCreate', async (interaction) => {
           }
         }
 
-        return interaction.reply({ content: `✅ O usuário **${targetUser.tag}** foi banido com sucesso! Motivo: \`${reason}\`` });
+        return interaction.reply({ content: `✅ **${targetUser.tag}** foi banido com sucesso!` });
       }
 
       if (interaction.commandName === 'lock') {
-        await handleChannelLock(interaction.channel, interaction.guild, true);
-        const lockEmbed = new EmbedBuilder().setTitle('🔒 Canal Trancado').setDescription('Este canal foi trancado pela moderação. Histórico liberado.').setColor('#ED4245').setTimestamp();
-        return interaction.reply({ embeds: [lockEmbed] });
+        await interaction.channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: false });
+        return interaction.reply({ content: '🔒 **Canal trancado pela moderação.**' });
       }
 
       if (interaction.commandName === 'unlock') {
-        await handleChannelLock(interaction.channel, interaction.guild, false);
-        const unlockEmbed = new EmbedBuilder().setTitle('🔓 Canal Destrancado').setDescription('O chat foi liberado para envio de mensagens.').setColor('#57F287').setTimestamp();
-        return interaction.reply({ embeds: [unlockEmbed] });
+        await interaction.channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: true });
+        return interaction.reply({ content: '🔓 **Canal destrancado.**' });
       }
 
       if (interaction.commandName === 'clear') {
         const amount = interaction.options.getInteger('quantidade');
-        const targetUser = interaction.options.getUser('usuario');
-        const onlyBots = interaction.options.getBoolean('apenas_bots');
-
-        await interaction.deferReply({ ephemeral: true });
-
-        const messages = await interaction.channel.messages.fetch({ limit: 100 });
-        let filteredMessages = Array.from(messages.values());
-
-        const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
-        filteredMessages = filteredMessages.filter(msg => msg.createdTimestamp > fourteenDaysAgo);
-
-        if (targetUser) filteredMessages = filteredMessages.filter(msg => msg.author.id === targetUser.id);
-        if (onlyBots) filteredMessages = filteredMessages.filter(msg => msg.author.bot);
-
-        const messagesToDelete = filteredMessages.slice(0, amount);
-        if (messagesToDelete.length === 0) {
-          return interaction.editReply({ content: '❌ Nenhuma mensagem recente encontrada dentro do critério.' });
-        }
-
-        const deleted = await interaction.channel.bulkDelete(messagesToDelete, true);
-        return interaction.editReply({ content: `🧹 **${deleted.size}** mensagem(ns) foram apagadas!` });
+        await interaction.channel.bulkDelete(amount, true);
+        return interaction.reply({ content: `🧹 **${amount}** mensagens foram apagadas.`, ephemeral: true });
       }
     }
 
-    // 2. Modais (Todos atualizam o painel principal no mesmo lugar)
-    if (interaction.isModalSubmit()) {
-      if (interaction.customId === 'modal_cv_title') {
-        const cvData = cvCache.get(interaction.user.id) || { color: db.themeColor };
-        cvData.title = interaction.fields.getTextInputValue('cv_input_title');
-        cvCache.set(interaction.user.id, cvData);
-        const payload = buildCvBuilderComponents(interaction.user.id, db.themeColor);
-        return interaction.update({ embeds: payload.embeds, components: payload.components });
-      }
-
-      if (interaction.customId === 'modal_cv_desc') {
-        const cvData = cvCache.get(interaction.user.id) || { color: db.themeColor };
-        cvData.description = interaction.fields.getTextInputValue('cv_input_desc');
-        cvCache.set(interaction.user.id, cvData);
-        const payload = buildCvBuilderComponents(interaction.user.id, db.themeColor);
-        return interaction.update({ embeds: payload.embeds, components: payload.components });
-      }
-
-      if (interaction.customId === 'modal_cv_image') {
-        const cvData = cvCache.get(interaction.user.id) || { color: db.themeColor };
-        cvData.image = interaction.fields.getTextInputValue('cv_input_image') || null;
-        cvCache.set(interaction.user.id, cvData);
-        const payload = buildCvBuilderComponents(interaction.user.id, db.themeColor);
-        return interaction.update({ embeds: payload.embeds, components: payload.components });
-      }
-
-      if (interaction.customId === 'modal_cv_custom_hex') {
-        const color = interaction.fields.getTextInputValue('cv_input_hex');
-        const cvData = cvCache.get(interaction.user.id) || { color: db.themeColor };
-        if (color.startsWith('#')) {
-          cvData.color = color;
-          cvCache.set(interaction.user.id, cvData);
-        }
-        const payload = buildCvBuilderComponents(interaction.user.id, db.themeColor);
-        return interaction.update({ embeds: payload.embeds, components: payload.components });
-      }
-
-      if (interaction.customId === 'modal_theme') {
-        const color = interaction.fields.getTextInputValue('theme_color_input');
-        if (color.startsWith('#')) {
-          db.themeColor = color;
-          await db.save();
-        }
-        return interaction.update({ content: null, embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
-      }
-
-      if (interaction.customId === 'modal_welcome_custom_hex') {
-        const color = interaction.fields.getTextInputValue('hex_input');
-        if (color.startsWith('#')) {
-          db.welcomeColor = color;
-          await db.save();
-        }
-        return interaction.update({ content: null, embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
-      }
-
-      if (interaction.customId === 'modal_leave_custom_hex') {
-        const color = interaction.fields.getTextInputValue('hex_input');
-        if (color.startsWith('#')) {
-          db.leaveColor = color;
-          await db.save();
-        }
-        return interaction.update({ content: null, embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
-      }
-
-      if (interaction.customId === 'modal_ticket_custom_hex') {
-        const color = interaction.fields.getTextInputValue('hex_input');
-        if (color.startsWith('#')) {
-          db.ticketColor = color;
-          await db.save();
-        }
-        return interaction.update({ content: null, embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
-      }
-
-      if (interaction.customId === 'modal_edit_welcome') {
-        db.welcomeMessage = interaction.fields.getTextInputValue('welcome_msg_text');
-        db.welcomeBanner = interaction.fields.getTextInputValue('welcome_banner_url') || null;
-        await db.save();
-        return interaction.update({ content: null, embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
-      }
-
-      if (interaction.customId === 'modal_edit_leave') {
-        db.leaveMessage = interaction.fields.getTextInputValue('leave_msg_text');
-        db.leaveBanner = interaction.fields.getTextInputValue('leave_banner_url') || null;
-        await db.save();
-        return interaction.update({ content: null, embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
-      }
-
-      if (interaction.customId === 'modal_edit_ticket_design') {
-        db.ticketTitle = interaction.fields.getTextInputValue('ticket_custom_title');
-        db.ticketDescription = interaction.fields.getTextInputValue('ticket_custom_desc');
-        db.ticketBanner = interaction.fields.getTextInputValue('ticket_custom_banner') || null;
-        await db.save();
-        return interaction.update({ content: null, embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
-      }
-
-      if (interaction.customId === 'modal_add_ticket_cat') {
-        const label = interaction.fields.getTextInputValue('cat_label');
-        const desc = interaction.fields.getTextInputValue('cat_desc');
-        const emoji = interaction.fields.getTextInputValue('cat_emoji') || '📂';
-
-        db.ticketCategories.push({ id: `cat_${Date.now()}`, label, description: desc, emoji });
-        await db.save();
-        return interaction.update({ content: null, embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
-      }
-
-      if (interaction.customId.startsWith('modal_open_ticket_form:')) {
-        if (!db.ticketCategory) return interaction.reply({ content: '❌ Categoria não definida.', ephemeral: true });
-
-        const catId = interaction.customId.split(':')[1];
-        const categoryObj = db.ticketCategories.find(c => c.id === catId);
-        const selectedCategory = categoryObj ? categoryObj.label : 'Atendimento';
-
-        const subject = interaction.fields.getTextInputValue('ticket_subject');
-        const reason = interaction.fields.getTextInputValue('ticket_reason');
-
-        const existingChannel = interaction.guild.channels.cache.find(c => c.name === `ticket-${interaction.user.username.toLowerCase()}`);
-        if (existingChannel) return interaction.reply({ content: `⚠️ Você já tem um atendimento ativo em ${existingChannel}!`, ephemeral: true });
-
-        const permissionOverwrites = [
-          { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-          { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] }
-        ];
-
-        if (db.ticketSupportRole) {
-          permissionOverwrites.push({ id: db.ticketSupportRole, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] });
-        }
-
-        const channel = await interaction.guild.channels.create({
-          name: `ticket-${interaction.user.username}`,
-          type: ChannelType.GuildText,
-          parent: db.ticketCategory,
-          permissionOverwrites
-        });
-
-        const ticketPanelEmbed = new EmbedBuilder()
-          .setTitle(`🎟️ Atendimento: ${selectedCategory}`)
-          .addFields(
-            { name: '👤 Cliente', value: `${interaction.user}`, inline: true },
-            { name: '📂 Categoria', value: `\`${selectedCategory}\``, inline: true },
-            { name: '📌 Assunto', value: subject },
-            { name: '📝 Detalhes', value: reason },
-            { name: '🛠️ Atendente', value: '`Nenhum (Aguardando Staff)`' }
-          )
-          .setColor(db.ticketColor || db.themeColor)
-          .setTimestamp();
-
-        const ticketButtons = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('btn_claim_ticket').setLabel('Assumir Ticket').setEmoji('🙋‍♂️').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('btn_close_ticket').setLabel('Fechar Ticket').setEmoji('🔒').setStyle(ButtonStyle.Danger)
-        );
-
-        await channel.send({ content: `${interaction.user} ${db.ticketSupportRole ? `<@&${db.ticketSupportRole}>` : ''}`, embeds: [ticketPanelEmbed], components: [ticketButtons] });
-        return interaction.reply({ content: `✅ Atendimento aberto em ${channel}!`, ephemeral: true });
-      }
-    }
-
-    // 3. Botões
+    // 2. Botões
     if (interaction.isButton()) {
-      if (interaction.customId === 'btn_back_main') {
-        return interaction.update({ content: null, embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
-      }
-
-      if (interaction.customId === 'btn_lock_quick') {
-        await handleChannelLock(interaction.channel, interaction.guild, true);
-        return interaction.reply({ content: `🔒 Canal <#${interaction.channel.id}> **trancado**.`, ephemeral: true });
-      }
-
-      if (interaction.customId === 'btn_unlock_quick') {
-        await handleChannelLock(interaction.channel, interaction.guild, false);
-        return interaction.reply({ content: `🔓 Canal <#${interaction.channel.id}> **destrancado**.`, ephemeral: true });
-      }
-
-      if (interaction.customId === 'cv_btn_title') {
-        const modal = new ModalBuilder().setCustomId('modal_cv_title').setTitle('Editar Título');
-        const data = cvCache.get(interaction.user.id) || {};
-        modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cv_input_title').setLabel('Título').setStyle(TextInputStyle.Short).setValue(data.title || '').setRequired(true)));
-        return interaction.showModal(modal);
-      }
-
-      if (interaction.customId === 'cv_btn_desc') {
-        const modal = new ModalBuilder().setCustomId('modal_cv_desc').setTitle('Editar Texto');
-        const data = cvCache.get(interaction.user.id) || {};
-        modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cv_input_desc').setLabel('Texto').setStyle(TextInputStyle.Paragraph).setValue(data.description || '').setRequired(true)));
-        return interaction.showModal(modal);
-      }
-
-      if (interaction.customId === 'cv_btn_image') {
-        const modal = new ModalBuilder().setCustomId('modal_cv_image').setTitle('URL do Banner');
-        const data = cvCache.get(interaction.user.id) || {};
-        modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cv_input_image').setLabel('URL da Imagem').setStyle(TextInputStyle.Short).setValue(data.image || '').setRequired(false)));
-        return interaction.showModal(modal);
-      }
-
-      if (interaction.customId === 'cv_btn_send') {
-        const cvData = cvCache.get(interaction.user.id);
-        if (!cvData) return interaction.reply({ content: '❌ Sessão expirada. Digite `/cv` novamente.', ephemeral: true });
-
-        const targetChan = cvData.targetChannel ? interaction.guild.channels.cache.get(cvData.targetChannel) : interaction.channel;
-        if (!targetChan) return interaction.reply({ content: '❌ Canal de destino inválido ou não encontrado.', ephemeral: true });
-
-        const finalEmbed = new EmbedBuilder()
-          .setTitle(cvData.title)
-          .setDescription(cvData.description)
-          .setColor(cvData.color || db.themeColor)
-          .setTimestamp();
-
-        if (cvData.image && (cvData.image.startsWith('http://') || cvData.image.startsWith('https://'))) {
-          finalEmbed.setImage(cvData.image);
-        }
-
-        await targetChan.send({ embeds: [finalEmbed] });
-        cvCache.delete(interaction.user.id);
-        return interaction.update({ content: `🚀 **Anúncio enviado em ${targetChan}!**`, embeds: [], components: [] });
-      }
-
-      if (interaction.customId === 'btn_theme') {
-        const colorSelect = new StringSelectMenuBuilder().setCustomId('select_theme_color').setPlaceholder('🎨 Escolha a cor do Tema').addOptions(COLOR_OPTIONS);
-        const btnBack = new ButtonBuilder().setCustomId('btn_back_main').setLabel('Voltar ao Painel').setEmoji('◀️').setStyle(ButtonStyle.Secondary);
-
-        return interaction.update({
-          content: '🎨 **Selecione a cor do Tema Principal:**',
-          embeds: [],
-          components: [new ActionRowBuilder().addComponents(colorSelect), new ActionRowBuilder().addComponents(btnBack)]
-        });
-      }
-
       if (interaction.customId === 'btn_welcome') {
-        const channelSelect = new ChannelSelectMenuBuilder().setCustomId('select_welcome_channel').setPlaceholder('📌 Selecionar canal de boas-vindas').addChannelTypes(ChannelType.GuildText);
-        const roleSelect = new RoleSelectMenuBuilder().setCustomId('select_autorole').setPlaceholder('🎭 Selecionar cargo AutoRole');
-        const colorSelect = new StringSelectMenuBuilder().setCustomId('select_welcome_color').setPlaceholder('🎨 Cor da Embed de Boas-Vindas').addOptions(COLOR_OPTIONS);
-
-        const btnEditMsg = new ButtonBuilder().setCustomId('btn_edit_welcome_msg').setLabel('Texto & Banner').setEmoji('✍️').setStyle(ButtonStyle.Secondary);
-        const btnBack = new ButtonBuilder().setCustomId('btn_back_main').setLabel('Voltar ao Painel').setEmoji('◀️').setStyle(ButtonStyle.Secondary);
-
+        const chan = new ChannelSelectMenuBuilder().setCustomId('select_welcome_channel').setPlaceholder('📌 Selecionar Canal de Boas-Vindas').addChannelTypes(ChannelType.GuildText);
+        const role = new RoleSelectMenuBuilder().setCustomId('select_autorole').setPlaceholder('🎭 Selecionar Cargo AutoRole');
+        
         return interaction.update({
-          content: '⚙️ **Boas-Vindas & AutoRole:**',
-          embeds: [],
-          components: [
-            new ActionRowBuilder().addComponents(channelSelect),
-            new ActionRowBuilder().addComponents(roleSelect),
-            new ActionRowBuilder().addComponents(colorSelect),
-            new ActionRowBuilder().addComponents(btnEditMsg, btnBack)
-          ]
+          embeds: [buildPainelEmbed(interaction.guild, db)],
+          components: [new ActionRowBuilder().addComponents(chan), new ActionRowBuilder().addComponents(role), ...buildPainelButtons()]
         });
-      }
-
-      if (interaction.customId === 'btn_edit_welcome_msg') {
-        const modal = new ModalBuilder().setCustomId('modal_edit_welcome').setTitle('Configurar Boas-Vindas');
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('welcome_msg_text').setLabel('Texto ({user}, {server}, {members})').setStyle(TextInputStyle.Paragraph).setValue(db.welcomeMessage).setRequired(true)),
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('welcome_banner_url').setLabel('URL Banner (Opcional)').setStyle(TextInputStyle.Short).setValue(db.welcomeBanner || '').setRequired(false))
-        );
-        return interaction.showModal(modal);
       }
 
       if (interaction.customId === 'btn_leave') {
-        const channelSelect = new ChannelSelectMenuBuilder().setCustomId('select_leave_channel').setPlaceholder('📌 Selecionar canal de saída').addChannelTypes(ChannelType.GuildText);
-        const colorSelect = new StringSelectMenuBuilder().setCustomId('select_leave_color').setPlaceholder('🎨 Cor da Embed de Saída').addOptions(COLOR_OPTIONS);
-
-        const btnEditMsg = new ButtonBuilder().setCustomId('btn_edit_leave_msg').setLabel('Texto & Banner').setEmoji('✍️').setStyle(ButtonStyle.Secondary);
-        const btnBack = new ButtonBuilder().setCustomId('btn_back_main').setLabel('Voltar ao Painel').setEmoji('◀️').setStyle(ButtonStyle.Secondary);
+        const chan = new ChannelSelectMenuBuilder().setCustomId('select_leave_channel').setPlaceholder('🚪 Selecionar Canal de Saída').addChannelTypes(ChannelType.GuildText);
+        const color = new StringSelectMenuBuilder().setCustomId('select_leave_color').setPlaceholder('🎨 Selecionar Cor de Saída').addOptions(COLOR_OPTIONS);
 
         return interaction.update({
-          content: '⚙️ **Configuração de Saída:**',
-          embeds: [],
-          components: [
-            new ActionRowBuilder().addComponents(channelSelect),
-            new ActionRowBuilder().addComponents(colorSelect),
-            new ActionRowBuilder().addComponents(btnEditMsg, btnBack)
-          ]
+          embeds: [buildPainelEmbed(interaction.guild, db)],
+          components: [new ActionRowBuilder().addComponents(chan), new ActionRowBuilder().addComponents(color), ...buildPainelButtons()]
         });
-      }
-
-      if (interaction.customId === 'btn_edit_leave_msg') {
-        const modal = new ModalBuilder().setCustomId('modal_edit_leave').setTitle('Configurar Saída');
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('leave_msg_text').setLabel('Texto ({user.tag}, {server})').setStyle(TextInputStyle.Paragraph).setValue(db.leaveMessage).setRequired(true)),
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('leave_banner_url').setLabel('URL Banner (Opcional)').setStyle(TextInputStyle.Short).setValue(db.leaveBanner || '').setRequired(false))
-        );
-        return interaction.showModal(modal);
       }
 
       if (interaction.customId === 'btn_tickets') {
-        const categorySelect = new ChannelSelectMenuBuilder().setCustomId('select_ticket_category').setPlaceholder('📁 Categoria para novos canais').addChannelTypes(ChannelType.GuildCategory);
-        const supportRoleSelect = new RoleSelectMenuBuilder().setCustomId('select_ticket_role').setPlaceholder('🛠️ Cargo dos Atendentes / Staff');
-        const colorSelect = new StringSelectMenuBuilder().setCustomId('select_ticket_color').setPlaceholder('🎨 Cor da Embed de Ticket').addOptions(COLOR_OPTIONS);
+        const sendChan = new ChannelSelectMenuBuilder().setCustomId('select_ticket_send_channel').setPlaceholder('📢 Selecionar Canal para Enviar Painel').addChannelTypes(ChannelType.GuildText);
+        const category = new ChannelSelectMenuBuilder().setCustomId('select_ticket_category').setPlaceholder('📁 Selecionar Categoria dos Tickets').addChannelTypes(ChannelType.GuildCategory);
+        const role = new RoleSelectMenuBuilder().setCustomId('select_ticket_role').setPlaceholder('🛠️ Selecionar Cargo Staff/Atendentes');
 
-        const btnDesign = new ButtonBuilder().setCustomId('btn_edit_ticket_design').setLabel('Design & Banner').setEmoji('🎨').setStyle(ButtonStyle.Secondary);
-        const btnAddCat = new ButtonBuilder().setCustomId('btn_add_ticket_cat').setLabel('Adicionar Opção').setEmoji('➕').setStyle(ButtonStyle.Primary);
-        const btnRemoveCat = new ButtonBuilder().setCustomId('btn_remove_ticket_cat').setLabel('Remover Opção').setEmoji('🗑️').setStyle(ButtonStyle.Danger);
-        const btnSendTicketPanel = new ButtonBuilder().setCustomId('btn_send_ticket_panel').setLabel('Enviar Painel Aqui').setEmoji('📩').setStyle(ButtonStyle.Success);
-        const btnBack = new ButtonBuilder().setCustomId('btn_back_main').setLabel('Voltar ao Painel').setEmoji('◀️').setStyle(ButtonStyle.Secondary);
+        const btnSend = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('btn_send_ticket_panel').setLabel('Enviar Painel de Ticket Agora').setEmoji('📩').setStyle(ButtonStyle.Success)
+        );
 
         return interaction.update({
-          content: '⚙️ **Gerenciamento de Tickets:**',
-          embeds: [],
-          components: [
-            new ActionRowBuilder().addComponents(categorySelect),
-            new ActionRowBuilder().addComponents(supportRoleSelect),
-            new ActionRowBuilder().addComponents(colorSelect),
-            new ActionRowBuilder().addComponents(btnDesign, btnAddCat, btnRemoveCat),
-            new ActionRowBuilder().addComponents(btnSendTicketPanel, btnBack)
-          ]
+          embeds: [buildPainelEmbed(interaction.guild, db)],
+          components: [new ActionRowBuilder().addComponents(sendChan), new ActionRowBuilder().addComponents(category), new ActionRowBuilder().addComponents(role), btnSend, ...buildPainelButtons()]
         });
       }
 
-      if (interaction.customId === 'btn_edit_ticket_design') {
-        const modal = new ModalBuilder().setCustomId('modal_edit_ticket_design').setTitle('Design do Ticket');
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('ticket_custom_title').setLabel('Título da Embed').setStyle(TextInputStyle.Short).setValue(db.ticketTitle).setRequired(true)),
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('ticket_custom_desc').setLabel('Descrição').setStyle(TextInputStyle.Paragraph).setValue(db.ticketDescription).setRequired(true)),
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('ticket_custom_banner').setLabel('URL Banner (Opcional)').setStyle(TextInputStyle.Short).setValue(db.ticketBanner || '').setRequired(false))
-        );
-        return interaction.showModal(modal);
+      if (interaction.customId === 'btn_logs') {
+        const chan = new ChannelSelectMenuBuilder().setCustomId('select_log_channel').setPlaceholder('📜 Selecionar Canal de Logs / Registros').addChannelTypes(ChannelType.GuildText);
+
+        return interaction.update({
+          embeds: [buildPainelEmbed(interaction.guild, db)],
+          components: [new ActionRowBuilder().addComponents(chan), ...buildPainelButtons()]
+        });
       }
 
-      if (interaction.customId === 'btn_add_ticket_cat') {
-        if (db.ticketCategories.length >= 25) return interaction.reply({ content: '❌ Limite de 25 opções atingido!', ephemeral: true });
+      if (interaction.customId === 'btn_theme') {
+        const color = new StringSelectMenuBuilder().setCustomId('select_theme_color').setPlaceholder('🎨 Selecionar Cor do Tema').addOptions(COLOR_OPTIONS);
 
-        const modal = new ModalBuilder().setCustomId('modal_add_ticket_cat').setTitle('Adicionar Opção de Ticket');
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cat_label').setLabel('Nome da Opção').setStyle(TextInputStyle.Short).setPlaceholder('Ex: Suporte Técnico').setRequired(true)),
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cat_desc').setLabel('Descrição Curta').setStyle(TextInputStyle.Short).setPlaceholder('Ex: Atendimento para dúvidas').setRequired(true)),
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cat_emoji').setLabel('Emoji (Opcional)').setStyle(TextInputStyle.Short).setPlaceholder('Ex: 🛠️').setRequired(false))
-        );
-        return interaction.showModal(modal);
-      }
-
-      if (interaction.customId === 'btn_remove_ticket_cat') {
-        if (db.ticketCategories.length === 0) return interaction.reply({ content: '❌ Nenhuma opção para remover!', ephemeral: true });
-
-        const selectMenu = new StringSelectMenuBuilder().setCustomId('select_delete_ticket_cat').setPlaceholder('🗑️ Selecione a opção para excluir')
-          .addOptions(db.ticketCategories.map(cat => ({ label: cat.label, description: cat.description, value: cat.id, emoji: cat.emoji })));
-
-        return interaction.reply({ content: 'Selecione abaixo a opção que deseja **remover**:', components: [new ActionRowBuilder().addComponents(selectMenu)], ephemeral: true });
+        return interaction.update({
+          embeds: [buildPainelEmbed(interaction.guild, db)],
+          components: [new ActionRowBuilder().addComponents(color), ...buildPainelButtons()]
+        });
       }
 
       if (interaction.customId === 'btn_send_ticket_panel') {
-        if (!db.ticketCategory) return interaction.reply({ content: '❌ Defina a categoria antes de enviar!', ephemeral: true });
-        if (db.ticketCategories.length === 0) return interaction.reply({ content: '❌ Adicione pelo menos uma opção antes!', ephemeral: true });
+        const targetChan = db.ticketChannel ? interaction.guild.channels.cache.get(db.ticketChannel) : interaction.channel;
+        if (!targetChan) return interaction.reply({ content: '❌ Selecione o canal no menu acima antes de enviar!', ephemeral: true });
 
         const ticketEmbed = new EmbedBuilder()
-          .setTitle(db.ticketTitle)
-          .setDescription(db.ticketDescription)
-          .setColor(db.ticketColor || db.themeColor)
-          .setFooter({ text: 'Central de Atendimento' });
-
-        if (db.ticketBanner && (db.ticketBanner.startsWith('http://') || db.ticketBanner.startsWith('https://'))) {
-          ticketEmbed.setImage(db.ticketBanner);
-        }
+          .setTitle(db.ticketTitle || '🎟️ Central de Atendimento')
+          .setDescription(db.ticketDescription || 'Selecione abaixo para abrir atendimento.')
+          .setColor(db.ticketColor || db.themeColor);
 
         const selectMenu = new StringSelectMenuBuilder()
           .setCustomId('select_ticket_type')
           .setPlaceholder('▼ Selecione uma opção para abrir seu ticket')
           .addOptions(db.ticketCategories.map(cat => ({ label: cat.label, description: cat.description, value: cat.id, emoji: cat.emoji })));
 
-        await interaction.channel.send({ embeds: [ticketEmbed], components: [new ActionRowBuilder().addComponents(selectMenu)] });
-        return interaction.reply({ content: '✅ Painel de Tickets enviado no canal!', ephemeral: true });
-      }
-
-      if (interaction.customId === 'btn_claim_ticket') {
-        const isStaff = interaction.member.permissions.has(PermissionFlagsBits.Administrator) || (db.ticketSupportRole && interaction.member.roles.cache.has(db.ticketSupportRole));
-        if (!isStaff) return interaction.reply({ content: '❌ Apenas a equipe autorizada pode assumir tickets!', ephemeral: true });
-
-        const embed = EmbedBuilder.from(interaction.message.embeds[0]);
-        embed.spliceFields(4, 1, { name: '🛠️ Atendente', value: `${interaction.user}` });
-
-        const disabledRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('btn_claimed').setLabel(`Assumido por ${interaction.user.username}`).setEmoji('✅').setStyle(ButtonStyle.Secondary).setDisabled(true),
-          new ButtonBuilder().setCustomId('btn_close_ticket').setLabel('Fechar Ticket').setEmoji('🔒').setStyle(ButtonStyle.Danger)
-        );
-
-        await interaction.update({ embeds: [embed], components: [disabledRow] });
-        return interaction.followUp({ content: `✅ Ticket assumido por ${interaction.user}!`, ephemeral: false });
-      }
-
-      if (interaction.customId === 'btn_close_ticket') {
-        const isStaff = interaction.member.permissions.has(PermissionFlagsBits.Administrator) || (db.ticketSupportRole && interaction.member.roles.cache.has(db.ticketSupportRole));
-        if (!isStaff) return interaction.reply({ content: '❌ Apenas a equipe autorizada pode fechar tickets!', ephemeral: true });
-
-        await interaction.reply({ content: '🔒 Fechando canal do ticket em 5 segundos...' });
-        setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
-      }
-
-      if (interaction.customId === 'btn_logs') {
-        const channelSelect = new ChannelSelectMenuBuilder().setCustomId('select_log_channel').setPlaceholder('📜 Selecionar canal de logs').addChannelTypes(ChannelType.GuildText);
-        const btnBack = new ButtonBuilder().setCustomId('btn_back_main').setLabel('Voltar ao Painel').setEmoji('◀️').setStyle(ButtonStyle.Secondary);
-
-        return interaction.update({
-          content: '⚙️ **Configuração de Logs e Moderação:**',
-          embeds: [],
-          components: [
-            new ActionRowBuilder().addComponents(channelSelect),
-            new ActionRowBuilder().addComponents(btnBack)
-          ]
-        });
+        await targetChan.send({ embeds: [ticketEmbed], components: [new ActionRowBuilder().addComponents(selectMenu)] });
+        return interaction.reply({ content: `✅ Painel de Ticket enviado em ${targetChan}!`, ephemeral: true });
       }
     }
 
-    // 4. Select Menus (Todos recarregam o painel principal)
+    // 3. Seleção nos Menus (Salva no MongoDB Atlas e Atualiza a Embed)
     if (interaction.isChannelSelectMenu()) {
-      const value = interaction.values[0];
+      const val = interaction.values[0];
+      if (interaction.customId === 'select_welcome_channel') db.welcomeChannel = val;
+      if (interaction.customId === 'select_leave_channel') db.leaveChannel = val;
+      if (interaction.customId === 'select_log_channel') db.logChannel = val;
+      if (interaction.customId === 'select_ticket_send_channel') db.ticketChannel = val;
+      if (interaction.customId === 'select_ticket_category') db.ticketCategory = val;
+      await db.save();
 
-      if (interaction.customId === 'cv_select_target_channel') {
-        const cvData = cvCache.get(interaction.user.id) || { title: 'Título', description: 'Texto' };
-        cvData.targetChannel = value;
-        cvCache.set(interaction.user.id, cvData);
-
-        const payload = buildCvBuilderComponents(interaction.user.id, db.themeColor);
-        return interaction.update({ embeds: payload.embeds, components: payload.components });
-      }
-
-      if (interaction.customId === 'select_welcome_channel') {
-        db.welcomeChannel = value;
-        await db.save();
-      } else if (interaction.customId === 'select_leave_channel') {
-        db.leaveChannel = value;
-        await db.save();
-      } else if (interaction.customId === 'select_ticket_category') {
-        db.ticketCategory = value;
-        await db.save();
-      } else if (interaction.customId === 'select_log_channel') {
-        db.logChannel = value;
-        await db.save();
-      }
-
-      return interaction.update({ content: null, embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
+      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
     }
 
     if (interaction.isRoleSelectMenu()) {
-      const value = interaction.values[0];
+      const val = interaction.values[0];
+      if (interaction.customId === 'select_autorole') db.autoRole = val;
+      if (interaction.customId === 'select_ticket_role') db.ticketSupportRole = val;
+      await db.save();
 
-      if (interaction.customId === 'select_autorole') {
-        db.autoRole = value;
-        await db.save();
-      } else if (interaction.customId === 'select_ticket_role') {
-        db.ticketSupportRole = value;
-        await db.save();
-      }
-
-      return interaction.update({ content: null, embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
+      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
     }
 
     if (interaction.isStringSelectMenu()) {
-      const selectedValue = interaction.values[0];
+      const val = interaction.values[0];
+      if (interaction.customId === 'select_theme_color') db.themeColor = val;
+      if (interaction.customId === 'select_leave_color') db.leaveColor = val;
+      await db.save();
 
-      if (interaction.customId === 'cv_select_color') {
-        if (selectedValue === 'custom_hex') {
-          const modal = new ModalBuilder().setCustomId('modal_cv_custom_hex').setTitle('Cor Hexadecimal');
-          modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cv_input_hex').setLabel('Cor Hex (Ex: #FF0055)').setStyle(TextInputStyle.Short).setRequired(true)));
-          return interaction.showModal(modal);
-        }
-
-        const cvData = cvCache.get(interaction.user.id) || { title: 'Título', description: 'Texto' };
-        cvData.color = selectedValue;
-        cvCache.set(interaction.user.id, cvData);
-
-        const payload = buildCvBuilderComponents(interaction.user.id, db.themeColor);
-        return interaction.update({ embeds: payload.embeds, components: payload.components });
-      }
-
-      if (selectedValue === 'custom_hex') {
-        const modalId = interaction.customId === 'select_theme_color' ? 'modal_theme' : (interaction.customId === 'select_welcome_color' ? 'modal_welcome_custom_hex' : (interaction.customId === 'select_leave_color' ? 'modal_leave_custom_hex' : 'modal_ticket_custom_hex'));
-        const modal = new ModalBuilder().setCustomId(modalId).setTitle('Cor Hexadecimal Customizada');
-        modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId(interaction.customId === 'select_theme_color' ? 'theme_color_input' : 'hex_input').setLabel('Informe a cor Hex (Ex: #FF0055)').setStyle(TextInputStyle.Short).setRequired(true)));
-        return interaction.showModal(modal);
-      }
-
-      if (interaction.customId === 'select_theme_color') {
-        db.themeColor = selectedValue;
-        await db.save();
-      } else if (interaction.customId === 'select_welcome_color') {
-        db.welcomeColor = selectedValue;
-        await db.save();
-      } else if (interaction.customId === 'select_leave_color') {
-        db.leaveColor = selectedValue;
-        await db.save();
-      } else if (interaction.customId === 'select_ticket_color') {
-        db.ticketColor = selectedValue;
-        await db.save();
-      } else if (interaction.customId === 'select_delete_ticket_cat') {
-        db.ticketCategories = db.ticketCategories.filter(c => c.id !== selectedValue);
-        await db.save();
-      }
-
-      if (interaction.customId === 'select_ticket_type') {
-        const selectedCatId = interaction.values[0];
-        const category = db.ticketCategories.find(c => c.id === selectedCatId);
-        const categoryName = category ? category.label : 'Atendimento';
-
-        const modal = new ModalBuilder().setCustomId(`modal_open_ticket_form:${selectedCatId}`).setTitle(`Atendimento: ${categoryName.slice(0, 30)}`);
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('ticket_subject').setLabel('Assunto Resumido').setStyle(TextInputStyle.Short).setRequired(true)),
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('ticket_reason').setLabel('Descrição Completa').setStyle(TextInputStyle.Paragraph).setRequired(true))
-        );
-        return interaction.showModal(modal);
-      }
-
-      return interaction.update({ content: null, embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
+      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
     }
+
   } catch (err) {
     console.error('[ERRO INTERAÇÃO]:', err);
   }
 });
 
-// Eventos de Entrada e Saída de Membros
+// 📌 EVENTOS DE BOAS-VINDAS E SAÍDA COM RENDERIZAÇÃO DE BANNER
 client.on('guildMemberAdd', async (member) => {
   const db = await getGuildData(member.guild.id);
   if (!db) return;
@@ -914,8 +334,7 @@ client.on('guildMemberAdd', async (member) => {
   if (db.welcomeChannel) {
     const channel = member.guild.channels.cache.get(db.welcomeChannel);
     if (channel) {
-      const text = parseVariables(db.welcomeMessage, member, member.guild);
-
+      const text = db.welcomeMessage.replace(/{user}/g, `${member}`).replace(/{server}/g, member.guild.name);
       const embed = new EmbedBuilder()
         .setTitle('👋 Seja Bem-vindo(a)!')
         .setDescription(text)
@@ -939,8 +358,7 @@ client.on('guildMemberRemove', async (member) => {
   if (db.leaveChannel) {
     const channel = member.guild.channels.cache.get(db.leaveChannel);
     if (channel) {
-      const text = parseVariables(db.leaveMessage, member, member.guild);
-
+      const text = db.leaveMessage.replace(/{user}/g, member.user.tag).replace(/{server}/g, member.guild.name);
       const embed = new EmbedBuilder()
         .setTitle('🚪 Membro Saiu')
         .setDescription(text)
@@ -957,7 +375,7 @@ client.on('guildMemberRemove', async (member) => {
 });
 
 // Proteção contra quedas
-process.on('unhandledRejection', (reason) => console.error('[UNHANDLED REJECTION]:', reason));
-process.on('uncaughtException', (err) => console.error('[UNCAUGHT EXCEPTION]:', err));
+process.on('unhandledRejection', r => console.error('[UNHANDLED REJECTION]:', r));
+process.on('uncaughtException', e => console.error('[UNCAUGHT EXCEPTION]:', e));
 
 client.login(process.env.DISCORD_TOKEN);
