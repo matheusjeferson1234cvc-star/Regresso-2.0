@@ -32,7 +32,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers // Necessário ativar no Portal do Desenvolvedor também!
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -90,10 +90,9 @@ client.on('guildMemberRemove', async (member) => {
   }
 });
 
-// 6. AUTENTICAÇÃO E LOGIN
-console.log('[DIAGNÓSTICO] Tentando efetuar o login com o token...');
+// 6. AUTENTICAÇÃO E LOGIN (Puxando a variável DISCORD_TOK)
+console.log('[DIAGNÓSTICO] Tentando efetuar o login com a variável de ambiente...');
 
-// Substitua pelo seu Token real entre aspas
-client.login('SEU_TOKEN_AQUI').catch(err => {
+client.login(process.env.DISCORD_TOK).catch(err => {
   console.error('[ERRO DE LOGIN] Falha ao autenticar o bot:', err.message);
 });
