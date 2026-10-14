@@ -1,70 +1,68 @@
-const {
-  Client,
-  GatewayIntentBits,
-  Partials,
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-  SlashCommandBuilder,
-  PermissionFlagsBits,
-  ChannelType
+const { 
+    Client, 
+    GatewayIntentBits, 
+    Partials, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    EmbedBuilder, 
+    ChannelType, 
+    PermissionFlagsBits, 
+    ModalBuilder, 
+    TextInputBuilder, 
+    TextInputStyle, 
+    SlashCommandBuilder, 
+    REST, 
+    Routes 
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-const dataDir = path.join(__dirname, 'data');
-const configFile = path.join(dataDir, 'config.json');
-const ticketsFile = path.join(dataDir, 'tickets.json');
-
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
-if (!fs.existsSync(configFile)) {
-  fs.writeFileSync(configFile, JSON.stringify({
-    panelTitle: "Central de Suporte",
-    panelDescription: "Clique no botão abaixo para abrir um ticket.",
-    panelColor: "#800080",
-    panelImage: "",
-    ticketCategoryId: "",
-    adminRoleId: "",
-    logChannelId: "",
-    serverLogChannelId: ""
-  }, null, 2));
-}
-if (!fs.existsSync(ticketsFile)) {
-  fs.writeFileSync(ticketsFile, JSON.stringify([], null, 2));
-}
-
-let config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-let tickets = JSON.parse(fs.readFileSync(ticketsFile, 'utf8'));
-
-function saveConfig() {
-  fs.writeFileSync(configFile, JSON.stringify(config, null, 2));
-}
-function saveTickets() {
-  fs.writeFileSync(ticketsFile, JSON.stringify(tickets, null, 2));
-}
-
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildModeration
-  ],
-  partials: [Partials.Message, Partials.Channel, Partials.GuildMember]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ],
+    partials: [Partials.Channel, Partials.GuildMember, Partials.User]
 });
 
-client.once('ready', async () => {
-  console.log(`Bot logado como ${client.user.tag}`);
-  const commands = [
+// Arquivos de dados
+const configPath = path.join(__dirname, 'data', 'config.json');
+const ticketsPath = path.join(__dirname, 'data', 'tickets.json');
+
+function loadJSON(filePath) {
+    if (!fs.existsSync(filePath)) {
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, JSON.stringify({}, null, 2));
+    }
+    try {
+        return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch {
+        return {};
+    }
+}
+
+function saveJSON(filePath, data) {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+
+// Registro dos Comandos Slash
+const commands = [
     new SlashCommandBuilder()
-      .setName('painel-administrativo')
-      .setDescription('Painel de controle central do bot')
+        .setName('painel-administrativo')
+        .setDescription('Abre o painel de configuração do bot')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder()
+        .setName('setar-ticket')
+        .setDescription('Envia a mensagem com o botão de criação de ticket no canal atual')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+].map(cmd => cmd.toJSON());
+
+client.once('ready', async
+Description('Painel de controle central do bot')
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   ];
   await client.application.commands.set(commands);
