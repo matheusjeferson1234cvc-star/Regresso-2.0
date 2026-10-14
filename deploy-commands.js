@@ -1,0 +1,28 @@
+const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+require('dotenv').config();
+
+const commands = [
+  new SlashCommandBuilder()
+    .setName('painel')
+    .setDescription('Envia o painel de suporte para criação de tickets')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+  new SlashCommandBuilder()
+    .setName('configurar')
+    .setDescription('Configura os canais e cargos do sistema de tickets')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+];
+
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+
+(async () => {
+  try {
+    console.log('Registrando os comandos...');
+    await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID),
+      { body: commands }
+    );
+    console.log('Comandos registrados!');
+  } catch (error) {
+    console.error(error);
+  }
+})();
