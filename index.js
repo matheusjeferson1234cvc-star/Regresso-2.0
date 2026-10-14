@@ -33,10 +33,10 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember]
 });
 
-// Caminho do Banco de Dados Local
+// Arquivo do Banco de Dados Local
 const dbFilePath = path.join(__dirname, 'database.json');
 
-// Estrutura Padrão do Banco de Dados
+// Estrutura Padrão
 const defaultDb = {
   themeColor: '#57F287',
   welcomeChannel: null,
@@ -59,7 +59,6 @@ const defaultDb = {
   logChannel: null
 };
 
-// Carregar Dados do Arquivo JSON
 let db = { ...defaultDb };
 
 function loadData() {
@@ -70,14 +69,13 @@ function loadData() {
       console.log('[BANCO DE DADOS] Configurações salvas carregadas com sucesso!');
     } else {
       saveData();
-      console.log('[BANCO DE DADOS] Criado novo arquivo database.json.');
+      console.log('[BANCO DE DADOS] Arquivo database.json gerado.');
     }
   } catch (error) {
     console.error('[ERRO] Falha ao carregar banco de dados:', error);
   }
 }
 
-// Salvar Dados no Arquivo JSON
 function saveData() {
   try {
     fs.writeFileSync(dbFilePath, JSON.stringify(db, null, 2), 'utf8');
@@ -86,7 +84,6 @@ function saveData() {
   }
 }
 
-// Carregar dados na inicialização
 loadData();
 
 // Comandos Slash
@@ -102,7 +99,7 @@ const commands = [
 ];
 
 client.once('ready', async () => {
-  console.log(`[SISTEMA] Bot inicializado como ${client.user.tag} (v15 - Com Persistência JSON)`);
+  console.log(`[SISTEMA] Bot inicializado como ${client.user.tag} (v15 - Sem Erros)`);
 
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN || 'SEU_TOKEN_AQUI');
   try {
@@ -110,13 +107,13 @@ client.once('ready', async () => {
       Routes.applicationCommands(client.user.id),
       { body: commands }
     );
-    console.log('[SLASH] Comandos globais registrados!');
+    console.log('[SLASH] Comandos globais registrados com sucesso!');
   } catch (error) {
     console.error('[ERRO] Falha ao registrar comandos:', error);
   }
 });
 
-// Helper: Formatador de Variáveis
+// Helper de Variáveis
 function parseVariables(text, member, guild) {
   if (!text) return '';
   return text
@@ -127,7 +124,7 @@ function parseVariables(text, member, guild) {
     .replace(/{members}/g, guild.memberCount);
 }
 
-// Helper: Painel Principal
+// Embed Principal do Painel
 function buildPainelEmbed(guild) {
   const categoriesFormatted = db.ticketCategories.length > 0
     ? db.ticketCategories.map(c => `└ ${c.emoji} **${c.label}**`).join('\n')
@@ -135,25 +132,25 @@ function buildPainelEmbed(guild) {
 
   return new EmbedBuilder()
     .setAuthor({ 
-      name: `Painel de Gestão VIP | ${guild.name}`, 
+      name: `Painel de Gestão | ${guild.name}`, 
       iconURL: guild.iconURL({ dynamic: true }) || client.user.displayAvatarURL() 
     })
     .setTitle('⚙️ Central de Configurações Administrativas')
-    .setDescription('```\nPersonalize as mensagens, cores, banners e fluxos do seu servidor. Dados salvos no banco!\n```')
+    .setDescription('```\nGerencie todos os módulos e visual do servidor através dos botões abaixo:\n```')
     .addFields(
       { 
-        name: '🎨 Tema Global & Visual', 
-        value: `└ **Cor do Tema:** \`${db.themeColor}\``, 
+        name: '🎨 Tema Global', 
+        value: `└ **Cor:** \`${db.themeColor}\``, 
         inline: false 
       },
       { 
         name: '👋 Boas-Vindas & AutoRole', 
-        value: `└ **Canal:** ${db.welcomeChannel ? `<#${db.welcomeChannel}>` : '`❌ Desativado`'}\n└ **Cargo:** ${db.autoRole ? `<@&${db.autoRole}>` : '`❌ Desativado`'}\n└ **Banner:** ${db.welcomeBanner ? '`✅ Imagem Ativa`' : '`❌ Sem Banner`'}`, 
+        value: `└ **Canal:** ${db.welcomeChannel ? `<#${db.welcomeChannel}>` : '`❌ Desativado`'}\n└ **Cargo:** ${db.autoRole ? `<@&${db.autoRole}>` : '`❌ Desativado`'}\n└ **Banner:** ${db.welcomeBanner ? '`✅ Configurado`' : '`❌ Sem Banner`'}`, 
         inline: true 
       },
       { 
         name: '🚪 Módulo de Saída', 
-        value: `└ **Canal:** ${db.leaveChannel ? `<#${db.leaveChannel}>` : '`❌ Desativado`'}\n└ **Banner:** ${db.leaveBanner ? '`✅ Imagem Ativa`' : '`❌ Sem Banner`'}`, 
+        value: `└ **Canal:** ${db.leaveChannel ? `<#${db.leaveChannel}>` : '`❌ Desativado`'}\n└ **Banner:** ${db.leaveBanner ? '`✅ Configurado`' : '`❌ Sem Banner`'}`, 
         inline: true 
       },
       { name: '\u200B', value: '\u200B', inline: true },
@@ -164,14 +161,14 @@ function buildPainelEmbed(guild) {
       },
       { 
         name: '📜 Central de Logs', 
-        value: `└ **Canal:** ${db.logChannel ? `<#${db.logChannel}>` : '`❌ Desativado`'}\n└ **Eventos:** \`Mensagens & Moderação\``, 
+        value: `└ **Canal:** ${db.logChannel ? `<#${db.logChannel}>` : '`❌ Desativado`'}`, 
         inline: true 
       },
       { name: '\u200B', value: '\u200B', inline: true }
     )
     .setColor(db.themeColor.startsWith('#') ? db.themeColor : '#57F287')
     .setThumbnail(client.user.displayAvatarURL())
-    .setFooter({ text: 'Green Otimizações • Sistema com Persistência Permanente', iconURL: client.user.displayAvatarURL() })
+    .setFooter({ text: 'Green Otimizações • Sistema Estável v15', iconURL: client.user.displayAvatarURL() })
     .setTimestamp();
 }
 
@@ -190,10 +187,10 @@ function buildPainelButtons() {
   return [row1, row2];
 }
 
-// Manipulação Global de Interações
+// Manipulação Global
 client.on('interactionCreate', async (interaction) => {
   try {
-    // 1. SLASH COMMANDS
+    // 1. Slash Commands
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'painel') {
         const embed = buildPainelEmbed(interaction.guild);
@@ -225,7 +222,7 @@ client.on('interactionCreate', async (interaction) => {
       }
     }
 
-    // 2. MODAIS (SUBMISSIONS)
+    // 2. Submissão de Modais
     if (interaction.isModalSubmit()) {
       if (interaction.customId === 'modal_cv') {
         const title = interaction.fields.getTextInputValue('cv_title');
@@ -252,9 +249,9 @@ client.on('interactionCreate', async (interaction) => {
         if (color.startsWith('#')) {
           db.themeColor = color;
           saveData();
-          return interaction.reply({ content: `✨ Cor do Tema Global atualizada e salva: \`${color}\`!`, ephemeral: true });
+          return interaction.reply({ content: `✨ Cor do Tema Global salva: \`${color}\`!`, ephemeral: true });
         } else {
-          return interaction.reply({ content: '❌ Por favor informe um código Hexadecimal válido (ex: `#00FF00`).', ephemeral: true });
+          return interaction.reply({ content: '❌ Informe um código Hexadecimal válido (ex: `#00FF00`).', ephemeral: true });
         }
       }
 
@@ -262,14 +259,14 @@ client.on('interactionCreate', async (interaction) => {
         db.welcomeMessage = interaction.fields.getTextInputValue('welcome_msg_text');
         db.welcomeBanner = interaction.fields.getTextInputValue('welcome_banner_url') || null;
         saveData();
-        return interaction.reply({ content: '✨ Mensagem e Banner de **Boas-Vindas** salvos permanentemente!', ephemeral: true });
+        return interaction.reply({ content: '✨ Configurações de **Boas-Vindas** salvas com sucesso!', ephemeral: true });
       }
 
       if (interaction.customId === 'modal_edit_leave') {
         db.leaveMessage = interaction.fields.getTextInputValue('leave_msg_text');
         db.leaveBanner = interaction.fields.getTextInputValue('leave_banner_url') || null;
         saveData();
-        return interaction.reply({ content: '✨ Mensagem e Banner de **Saída** salvos permanentemente!', ephemeral: true });
+        return interaction.reply({ content: '✨ Configurações de **Saída** salvas com sucesso!', ephemeral: true });
       }
 
       if (interaction.customId === 'modal_edit_ticket_design') {
@@ -288,15 +285,19 @@ client.on('interactionCreate', async (interaction) => {
 
         db.ticketCategories.push({ id: `cat_${Date.now()}`, label, description: desc, emoji });
         saveData();
-        return interaction.reply({ content: `✅ Categoria **${label}** adicionada e salva!`, ephemeral: true });
+        return interaction.reply({ content: `✅ Categoria **${label}** adicionada!`, ephemeral: true });
       }
 
-      if (interaction.customId === 'modal_open_ticket_form') {
+      // Processamento da criação do Ticket seguro (obtém a categoria diretamente pelo customId)
+      if (interaction.customId.startsWith('modal_open_ticket_form:')) {
         if (!db.ticketCategory) {
-          return interaction.reply({ content: '❌ Categoria de tickets não configurada no servidor.', ephemeral: true });
+          return interaction.reply({ content: '❌ Categoria de tickets não definida nas configurações.', ephemeral: true });
         }
 
-        const selectedCategory = interaction.client.tempTicketCategory || 'Atendimento Generalizado';
+        const catId = interaction.customId.split(':')[1];
+        const categoryObj = db.ticketCategories.find(c => c.id === catId);
+        const selectedCategory = categoryObj ? categoryObj.label : 'Atendimento';
+
         const subject = interaction.fields.getTextInputValue('ticket_subject');
         const reason = interaction.fields.getTextInputValue('ticket_reason');
 
@@ -305,7 +306,7 @@ client.on('interactionCreate', async (interaction) => {
         );
 
         if (existingChannel) {
-          return interaction.reply({ content: `⚠️ Você já tem um atendimento ativo em ${existingChannel}!`, ephemeral: true });
+          return interaction.reply({ content: `⚠️ Você já possui um atendimento aberto em ${existingChannel}!`, ephemeral: true });
         }
 
         const permissionOverwrites = [
@@ -331,10 +332,10 @@ client.on('interactionCreate', async (interaction) => {
           .setTitle(`🎟️ Atendimento: ${selectedCategory}`)
           .addFields(
             { name: '👤 Cliente', value: `${interaction.user}`, inline: true },
-            { name: '📂 Categoria', value: `\`${selectedCategory}\``, inline: true },
+            { name: '📂 Departamento', value: `\`${selectedCategory}\``, inline: true },
             { name: '📌 Assunto', value: subject },
-            { name: '📝 Detalhes do Problema / Pedido', value: reason },
-            { name: '🛠️ Atendente Responsável', value: '`Nenhum (Aguardando Atendente)`' }
+            { name: '📝 Detalhes do Pedido', value: reason },
+            { name: '🛠️ Atendente Responsável', value: '`Nenhum (Aguardando Staff)`' }
           )
           .setColor(db.ticketColor.startsWith('#') ? db.ticketColor : db.themeColor)
           .setTimestamp();
@@ -345,7 +346,7 @@ client.on('interactionCreate', async (interaction) => {
         );
 
         await channel.send({ 
-          content: `${interaction.user} ${db.ticketSupportRole ? `<@&${db.ticketSupportRole}>` : ''}`, 
+          content: `${interaction.user}${db.ticketSupportRole ? `<@&${db.ticketSupportRole}>` : ''}`, 
           embeds: [ticketPanelEmbed], 
           components: [ticketButtons] 
         });
@@ -354,7 +355,7 @@ client.on('interactionCreate', async (interaction) => {
       }
     }
 
-    // 3. BOTÕES DO PAINEL
+    // 3. Botões
     if (interaction.isButton()) {
       if (interaction.customId === 'btn_theme') {
         const modal = new ModalBuilder()
@@ -363,7 +364,7 @@ client.on('interactionCreate', async (interaction) => {
 
         modal.addComponents(
           new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('theme_color_input').setLabel('Cor Hexadecimal (Ex: #57F287, #00FF00)').setStyle(TextInputStyle.Short).setValue(db.themeColor).setRequired(true)
+            new TextInputBuilder().setCustomId('theme_color_input').setLabel('Cor Hexadecimal (Ex: #57F287)').setStyle(TextInputStyle.Short).setValue(db.themeColor).setRequired(true)
           )
         );
         return interaction.showModal(modal);
@@ -414,7 +415,7 @@ client.on('interactionCreate', async (interaction) => {
           embed.setImage(db.welcomeBanner);
         }
 
-        return interaction.reply({ content: '🔍 **Esta é uma pré-visualização da mensagem de boas-vindas:**', embeds: [embed], ephemeral: true });
+        return interaction.reply({ content: '🔍 **Pré-visualização da mensagem de boas-vindas:**', embeds: [embed], ephemeral: true });
       }
 
       if (interaction.customId === 'btn_edit_welcome_msg') {
@@ -472,7 +473,7 @@ client.on('interactionCreate', async (interaction) => {
           embed.setImage(db.leaveBanner);
         }
 
-        return interaction.reply({ content: '🔍 **Esta é uma pré-visualização da mensagem de saída:**', embeds: [embed], ephemeral: true });
+        return interaction.reply({ content: '🔍 **Pré-visualização da mensagem de saída:**', embeds: [embed], ephemeral: true });
       }
 
       if (interaction.customId === 'btn_edit_leave_msg') {
@@ -574,7 +575,7 @@ client.on('interactionCreate', async (interaction) => {
             new TextInputBuilder().setCustomId('cat_label').setLabel('Nome da Categoria').setStyle(TextInputStyle.Short).setPlaceholder('Ex: Suporte Técnico').setRequired(true)
           ),
           new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId('cat_desc').setLabel('Descrição Curta').setStyle(TextInputStyle.Short).setPlaceholder('Ex: Atendimento para dúvidas e ajuda').setRequired(true)
+            new TextInputBuilder().setCustomId('cat_desc').setLabel('Descrição Curta').setStyle(TextInputStyle.Short).setPlaceholder('Ex: Atendimento para dúvidas').setRequired(true)
           ),
           new ActionRowBuilder().addComponents(
             new TextInputBuilder().setCustomId('cat_emoji').setLabel('Emoji (Opcional)').setStyle(TextInputStyle.Short).setPlaceholder('Ex: 🛠️').setRequired(false)
@@ -689,7 +690,7 @@ client.on('interactionCreate', async (interaction) => {
       }
     }
 
-    // 4. SELECT MENUS
+    // 4. Select Menus
     if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'select_delete_ticket_cat') {
         const catId = interaction.values[0];
@@ -699,21 +700,20 @@ client.on('interactionCreate', async (interaction) => {
         saveData();
 
         return interaction.update({
-          content: `🗑️ Categoria **${removedCat ? removedCat.label : 'selecionada'}** removida e salva!`,
+          content: `🗑️ Categoria **${removedCat ? removedCat.label : 'selecionada'}** removida!`,
           components: []
         });
       }
 
+      // Ao selecionar uma opção do ticket, o ID é repassado diretamente no customId do Modal
       if (interaction.customId === 'select_ticket_type') {
         const selectedCatId = interaction.values[0];
         const category = db.ticketCategories.find(c => c.id === selectedCatId);
         const categoryName = category ? category.label : 'Atendimento';
 
-        interaction.client.tempTicketCategory = categoryName;
-
         const modal = new ModalBuilder()
-          .setCustomId('modal_open_ticket_form')
-          .setTitle(`Atendimento: ${categoryName}`);
+          .setCustomId(`modal_open_ticket_form:${selectedCatId}`)
+          .setTitle(`Atendimento: ${categoryName.slice(0, 30)}`);
 
         modal.addComponents(
           new ActionRowBuilder().addComponents(
@@ -772,7 +772,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// Eventos de Entradas, Saídas e Logs
+// Eventos do Servidor
 client.on('guildMemberAdd', async (member) => {
   if (db.autoRole) {
     await member.roles.add(db.autoRole).catch(() => {});
@@ -787,4 +787,106 @@ client.on('guildMemberAdd', async (member) => {
         .setTitle('👋 Seja Bem-vindo(a)!')
         .setDescription(text)
         .setColor(db.themeColor.startsWith('#') ? db.themeColor : '#57F287')
-        .setThumbnail(member.user.displayAvatarURL
+        .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+        .setTimestamp();
+
+      if (db.welcomeBanner && (db.welcomeBanner.startsWith('http://') || db.welcomeBanner.startsWith('https://'))) {
+        embed.setImage(db.welcomeBanner);
+      }
+
+      channel.send({ embeds: [embed] }).catch(() => {});
+    }
+  }
+});
+
+client.on('guildMemberRemove', async (member) => {
+  if (db.leaveChannel) {
+    const channel = member.guild.channels.cache.get(db.leaveChannel);
+    if (channel) {
+      const text = parseVariables(db.leaveMessage, member, member.guild);
+
+      const embed = new EmbedBuilder()
+        .setTitle('🚪 Membro Saiu')
+        .setDescription(text)
+        .setColor('#ED4245')
+        .setTimestamp();
+
+      if (db.leaveBanner && (db.leaveBanner.startsWith('http://') || db.leaveBanner.startsWith('https://'))) {
+        embed.setImage(db.leaveBanner);
+      }
+
+      channel.send({ embeds: [embed] }).catch(() => {});
+    }
+  }
+});
+
+client.on('messageDelete', (message) => {
+  if (message.author?.bot || !db.logChannel) return;
+  const logChannel = message.guild?.channels.cache.get(db.logChannel);
+  if (!logChannel) return;
+
+  const embed = new EmbedBuilder()
+    .setTitle('🗑️ Mensagem Deletada')
+    .addFields(
+      { name: 'Autor', value: `${message.author.tag} (\`${message.author.id}\`)`, inline: true },
+      { name: 'Canal', value: `<#${message.channel.id}>`, inline: true },
+      { name: 'Conteúdo', value: message.content ? `\`\`\`${message.content}\`\`\`` : '*Sem texto*' }
+    )
+    .setColor('#ED4245')
+    .setTimestamp();
+
+  logChannel.send({ embeds: [embed] }).catch(() => {});
+});
+
+client.on('messageUpdate', (oldMessage, newMessage) => {
+  if (oldMessage.author?.bot || !db.logChannel) return;
+  if (oldMessage.content === newMessage.content) return;
+  const logChannel = oldMessage.guild?.channels.cache.get(db.logChannel);
+  if (!logChannel) return;
+
+  const embed = new EmbedBuilder()
+    .setTitle('✏️ Mensagem Editada')
+    .addFields(
+      { name: 'Autor', value: `${oldMessage.author.tag} (\`${oldMessage.author.id}\`)`, inline: true },
+      { name: 'Canal', value: `<#${oldMessage.channel.id}>`, inline: true },
+      { name: 'Antes', value: `\`\`\`${oldMessage.content || 'Vazio'}\`\`\`` },
+      { name: 'Depois', value: `\`\`\`${newMessage.content || 'Vazio'}\`\`\`` }
+    )
+    .setColor('#FEE75C')
+    .setTimestamp();
+
+  logChannel.send({ embeds: [embed] }).catch(() => {});
+});
+
+client.on('guildBanAdd', (ban) => {
+  if (!db.logChannel) return;
+  const logChannel = ban.guild.channels.cache.get(db.logChannel);
+  if (!logChannel) return;
+
+  const embed = new EmbedBuilder()
+    .setTitle('🔨 Membro Banido')
+    .setDescription(`O usuário **${ban.user.tag}** (\`${ban.user.id}\`) foi banido do servidor.`)
+    .setColor('#5865F2')
+    .setTimestamp();
+
+  logChannel.send({ embeds: [embed] }).catch(() => {});
+});
+
+client.on('guildBanRemove', (ban) => {
+  if (!db.logChannel) return;
+  const logChannel = ban.guild.channels.cache.get(db.logChannel);
+  if (!logChannel) return;
+
+  const embed = new EmbedBuilder()
+    .setTitle('🔓 Membro Desbanido')
+    .setDescription(`O usuário **${ban.user.tag}** (\`${ban.user.id}\`) foi desbanido do servidor.`)
+    .setColor('#57F287')
+    .setTimestamp();
+
+  logChannel.send({ embeds: [embed] }).catch(() => {});
+});
+
+process.on('unhandledRejection', (reason) => console.error('UnhandledRejection:', reason));
+process.on('uncaughtException', (err) => console.error('UncaughtException:', err));
+
+client.login(process.env.DISCORD_TOKEN || 'SEU_TOKEN_AQUI');
