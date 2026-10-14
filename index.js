@@ -24,12 +24,13 @@ const client = new Client({
     ]
 });
 
-// Armazenamento em memória por servidor
+// Armazenamento das configurações
 const config = {
     welcomeChannel: null,
     exitChannel: null,
     autoRole: null,
-    ticketCategory: null
+    ticketCategory: null,
+    tempEmbedChannel: {} // Armazena o canal temporário de cada usuário
 };
 
 client.on('ready', () => {
@@ -41,18 +42,20 @@ client.on('guildMemberAdd', async (member) => {
     try {
         if (config.autoRole) {
             const role = member.guild.roles.cache.get(config.autoRole);
-            if (role) await member.roles.add(role).catch(console.error);
+            if (role) {
+                await member.roles.add(role).catch(err => console.error('Erro de permissão ao adicionar cargo:', err.message));
+            }
         }
 
         if (config.welcomeChannel) {
             const channel = member.guild.channels.cache.get(config.welcomeChannel);
-            if (channel) {
+            if (channel && channel.isTextBased()) {
                 const embed = new EmbedBuilder()
                     .setTitle('👋 Bem-vindo(a)!')
                     .setDescription(`Olá ${member}, seja muito bem-vindo(a) ao **${member.guild.name}**!`)
                     .setColor('#00FF00')
                     .setThumbnail(member.user.displayAvatarURL());
-                await channel.send({ embeds: [embed] }).catch(console.error);
+                await channel.send({ embeds: [embed] }).catch(() => {});
             }
         }
     } catch (err) {
@@ -65,12 +68,12 @@ client.on('guildMemberRemove', async (member) => {
     try {
         if (config.exitChannel) {
             const channel = member.guild.channels.cache.get(config.exitChannel);
-            if (channel) {
+            if (channel && channel.isTextBased()) {
                 const embed = new EmbedBuilder()
                     .setTitle('👋 Até mais!')
                     .setDescription(`O membro **${member.user.tag}** saiu do servidor.`)
                     .setColor('#FF0000');
-                await channel.send({ embeds: [embed] }).catch(console.error);
+                await channel.send({ embeds: [embed] }).catch(() => {});
             }
         }
     } catch (err) {
@@ -78,7 +81,7 @@ client.on('guildMemberRemove', async (member) => {
     }
 });
 
-// Comando para abrir o Painel
+// Comando /painel-administrativo
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
@@ -91,26 +94,10 @@ client.on('messageCreate', async (message) => {
             .setCustomId('admin_panel_select')
             .setPlaceholder('Selecione uma aba para configurar...')
             .addOptions([
-                {
-                    label: 'Boas-Vindas & Autorole',
-                    description: 'Canal de entrada, saída e cargo automático',
-                    value: 'tab_welcome'
-                },
-                {
-                    label: 'Atendimento (Tickets)',
-                    description: 'Configurar categoria de tickets',
-                    value: 'tab_tickets'
-                },
-                {
-                    label: 'Regras',
-                    description: 'Enviar mensagem de regras no canal escolhido',
-                    value: 'tab_rules'
-                },
-                {
-                    label: 'Criar Embed',
-                    description: 'Enviar mensagem personalizada em qualquer canal',
-                    value: 'tab_embed'
-                }
+                { label: 'Boas-Vindas & Autorole', description: 'Canal de entrada, saída e cargo automático', value: 'tab_welcome' },
+                { label: 'Atendimento (Tickets)', description: 'Configurar categoria de tickets', value: 'tab_tickets' },
+                { label: 'Regras', description: 'Enviar mensagem de regras no canal escolhido', value: 'tab_rules' },
+                { label: 'Criar Embed', description: 'Enviar mensagem personalizada em qualquer canal', value: 'tab_embed' }
             ]);
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
@@ -124,27 +111,17 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// Manipulador de Interações
+// Gerenciador Principal de Interações
 client.on('interactionCreate', async (interaction) => {
     try {
-        // --- 1. SELEÇÕES DO MENU PRINCIPAL ---
+        // --- 1. SELEÇÃO DE ABAS NO MENU PRINCIPAL ---
         if (interaction.isStringSelectMenu() && interaction.customId === 'admin_panel_select') {
             const selected = interaction.values[0];
 
             if (selected === 'tab_welcome') {
-                const selectWelcome = new ChannelSelectMenuBuilder()
-                    .setCustomId('select_welcome_channel')
-                    .setPlaceholder('Selecionar Canal de Entrada')
-                    .setChannelTypes(ChannelType.GuildText);
-
-                const selectExit = new ChannelSelectMenuBuilder()
-                    .setCustomId('select_exit_channel')
-                    .setPlaceholder('Selecionar Canal de Saída')
-                    .setChannelTypes(ChannelType.GuildText);
-
-                const selectRole = new RoleSelectMenuBuilder()
-                    .setCustomId('select_auto_role')
-                    .setPlaceholder('Selecionar Cargo Automático');
+                const btnWelcome = new ButtonBuilder().setCustomId('btn_open_welcome_select').setLabel('Configurar Entrada').setStyle(ButtonStyle.Primary);
+                const btnExit = new ButtonBuilder().setCustomId('btn_open_exit_select').setLabel('Configurar Saída').setStyle(ButtonStyle.Danger);
+                const btnRole = new ButtonBuilder().setCustomId('btn_open_role_select').setLabel('Configurar Autorole').setStyle(ButtonStyle.Success);
 
                 const embed = new EmbedBuilder()
                     .setTitle('👋 Boas-Vindas, Saída & Autorole')
@@ -153,11 +130,7 @@ client.on('interactionCreate', async (interaction) => {
 
                 await interaction.reply({
                     embeds: [embed],
-                    components: [
-                        new ActionRowBuilder().addComponents(selectWelcome),
-                        new ActionRowBuilder().addComponents(selectExit),
-                        new ActionRowBuilder().addComponents(selectRole)
-                    ],
+                    components: [new ActionRowBuilder().addComponents(btnWelcome, btnExit, btnRole)],
                     ephemeral: true
                 });
             }
@@ -169,7 +142,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setChannelTypes(ChannelType.GuildCategory);
 
                 await interaction.reply({
-                    content: '📁 Selecione a categoria onde os canais de suporte serão criados:',
+                    content: '📁 Selecione a categoria onde os tickets serão criados:',
                     components: [new ActionRowBuilder().addComponents(selectCategory)],
                     ephemeral: true
                 });
@@ -178,7 +151,7 @@ client.on('interactionCreate', async (interaction) => {
             if (selected === 'tab_rules') {
                 const selectChannel = new ChannelSelectMenuBuilder()
                     .setCustomId('select_rules_channel')
-                    .setPlaceholder('Selecionar Canal para enviar as Regras')
+                    .setPlaceholder('Selecionar Canal para Regras')
                     .setChannelTypes(ChannelType.GuildText);
 
                 await interaction.reply({
@@ -191,7 +164,7 @@ client.on('interactionCreate', async (interaction) => {
             if (selected === 'tab_embed') {
                 const selectChannel = new ChannelSelectMenuBuilder()
                     .setCustomId('select_embed_channel')
-                    .setPlaceholder('Selecionar Canal de Destino da Embed')
+                    .setPlaceholder('Selecionar Canal da Embed')
                     .setChannelTypes(ChannelType.GuildText);
 
                 await interaction.reply({
@@ -202,7 +175,60 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // --- 2. RESPOSTAS DOS MENUS DE CANAL / CARGO ---
+        // --- 2. BOTÕES AUXILIARES PARA EVITAR CONFLITO DE MENUS ---
+        if (interaction.isButton()) {
+            if (interaction.customId === 'btn_open_welcome_select') {
+                const select = new ChannelSelectMenuBuilder().setCustomId('select_welcome_channel').setPlaceholder('Escolha o canal de entrada').setChannelTypes(ChannelType.GuildText);
+                await interaction.reply({ components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+            }
+
+            if (interaction.customId === 'btn_open_exit_select') {
+                const select = new ChannelSelectMenuBuilder().setCustomId('select_exit_channel').setPlaceholder('Escolha o canal de saída').setChannelTypes(ChannelType.GuildText);
+                await interaction.reply({ components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+            }
+
+            if (interaction.customId === 'btn_open_role_select') {
+                const select = new RoleSelectMenuBuilder().setCustomId('select_auto_role').setPlaceholder('Escolha o cargo automático');
+                await interaction.reply({ components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+            }
+
+            if (interaction.customId.startsWith('btn_trigger_embed_modal_')) {
+                const targetChannelId = interaction.customId.replace('btn_trigger_embed_modal_', '');
+
+                const modal = new ModalBuilder()
+                    .setCustomId(`modal_send_embed_${targetChannelId}`)
+                    .setTitle('Criar Embed Personalizada');
+
+                const titleInput = new TextInputBuilder().setCustomId('embed_title').setLabel('Título').setStyle(TextInputStyle.Short).setRequired(true);
+                const descInput = new TextInputBuilder().setCustomId('embed_desc').setLabel('Descrição').setStyle(TextInputStyle.Paragraph).setRequired(true);
+                const colorInput = new TextInputBuilder().setCustomId('embed_color').setLabel('Cor Hex (Ex: #00FF00 ou deixe vazio)').setStyle(TextInputStyle.Short).setRequired(false);
+                const imageInput = new TextInputBuilder().setCustomId('embed_image').setLabel('Link da Imagem (URL)').setStyle(TextInputStyle.Short).setRequired(false);
+
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(titleInput),
+                    new ActionRowBuilder().addComponents(descInput),
+                    new ActionRowBuilder().addComponents(colorInput),
+                    new ActionRowBuilder().addComponents(imageInput)
+                );
+
+                await interaction.showModal(modal);
+            }
+
+            if (interaction.customId.startsWith('btn_trigger_rules_modal_')) {
+                const targetChannelId = interaction.customId.replace('btn_trigger_rules_modal_', '');
+
+                const modal = new ModalBuilder()
+                    .setCustomId(`modal_send_rules_${targetChannelId}`)
+                    .setTitle('Escrever Regras');
+
+                const contentInput = new TextInputBuilder().setCustomId('rules_text').setLabel('Texto das Regras').setStyle(TextInputStyle.Paragraph).setRequired(true);
+                modal.addComponents(new ActionRowBuilder().addComponents(contentInput));
+
+                await interaction.showModal(modal);
+            }
+        }
+
+        // --- 3. MENUS DE SELEÇÃO DE CANAIS E CARGOS ---
         if (interaction.isChannelSelectMenu()) {
             if (interaction.customId === 'select_welcome_channel') {
                 config.welcomeChannel = interaction.values[0];
@@ -221,60 +247,30 @@ client.on('interactionCreate', async (interaction) => {
 
             if (interaction.customId === 'select_rules_channel') {
                 const targetChannelId = interaction.values[0];
+                const btn = new ButtonBuilder()
+                    .setCustomId(`btn_trigger_rules_modal_${targetChannelId}`)
+                    .setLabel('Escrever Texto das Regras')
+                    .setStyle(ButtonStyle.Success);
 
-                const modal = new ModalBuilder()
-                    .setCustomId(`modal_send_rules_${targetChannelId}`)
-                    .setTitle('Escrever Regras');
-
-                const contentInput = new TextInputBuilder()
-                    .setCustomId('rules_text')
-                    .setLabel('Texto das Regras')
-                    .setStyle(TextInputStyle.Paragraph)
-                    .setRequired(true);
-
-                modal.addComponents(new ActionRowBuilder().addComponents(contentInput));
-                await interaction.showModal(modal);
+                await interaction.reply({
+                    content: `✅ Canal selecionado: <#${targetChannelId}>. Clique abaixo para abrir o formulário:`,
+                    components: [new ActionRowBuilder().addComponents(btn)],
+                    ephemeral: true
+                });
             }
 
             if (interaction.customId === 'select_embed_channel') {
                 const targetChannelId = interaction.values[0];
+                const btn = new ButtonBuilder()
+                    .setCustomId(`btn_trigger_embed_modal_${targetChannelId}`)
+                    .setLabel('Abrir Formulário da Embed')
+                    .setStyle(ButtonStyle.Primary);
 
-                const modal = new ModalBuilder()
-                    .setCustomId(`modal_send_embed_${targetChannelId}`)
-                    .setTitle('Criar Embed Personalizada');
-
-                const titleInput = new TextInputBuilder()
-                    .setCustomId('embed_title')
-                    .setLabel('Título')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true);
-
-                const descInput = new TextInputBuilder()
-                    .setCustomId('embed_desc')
-                    .setLabel('Descrição')
-                    .setStyle(TextInputStyle.Paragraph)
-                    .setRequired(true);
-
-                const colorInput = new TextInputBuilder()
-                    .setCustomId('embed_color')
-                    .setLabel('Cor Hex (Ex: #00FF00 ou deixe vazio)')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(false);
-
-                const imageInput = new TextInputBuilder()
-                    .setCustomId('embed_image')
-                    .setLabel('Link da Imagem (URL)')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(false);
-
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(titleInput),
-                    new ActionRowBuilder().addComponents(descInput),
-                    new ActionRowBuilder().addComponents(colorInput),
-                    new ActionRowBuilder().addComponents(imageInput)
-                );
-
-                await interaction.showModal(modal);
+                await interaction.reply({
+                    content: `✅ Canal selecionado: <#${targetChannelId}>. Clique no botão abaixo para preencher os dados da Embed:`,
+                    components: [new ActionRowBuilder().addComponents(btn)],
+                    ephemeral: true
+                });
             }
         }
 
@@ -285,7 +281,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // --- 3. SUBMISSÃO DE MODAIS ---
+        // --- 4. SUBMISSÃO DE MODAIS ---
         if (interaction.isModalSubmit()) {
             if (interaction.customId.startsWith('modal_send_rules_')) {
                 const channelId = interaction.customId.replace('modal_send_rules_', '');
@@ -313,7 +309,6 @@ client.on('interactionCreate', async (interaction) => {
                 const channel = interaction.guild.channels.cache.get(channelId);
                 if (!channel) return interaction.reply({ content: '❌ Canal não encontrado.', ephemeral: true });
 
-                // Tratamento seguro de cor Hexadecimal
                 if (color && !color.startsWith('#')) color = `#${color}`;
                 if (!/^#[0-9A-F]{6}$/i.test(color)) color = '#2b2d31';
 
@@ -331,12 +326,11 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
     } catch (error) {
-        console.error('Erro na execução:', error);
+        console.error('Erro na execução da interação:', error);
         if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: '❌ Ocorreu um erro ao executar a ação. Verifique o terminal do bot.', ephemeral: true }).catch(() => {});
+            await interaction.reply({ content: '❌ Ocorreu um erro ao processar. Verifique o terminal.', ephemeral: true }).catch(() => {});
         }
     }
 });
 
 client.login('SEU_TOKEN_AQUI');
-
