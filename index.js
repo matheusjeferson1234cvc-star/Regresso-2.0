@@ -1,218 +1,356 @@
 const {
   Client,
   GatewayIntentBits,
+  Partials,
+  EmbedBuilder,
   ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   StringSelectMenuBuilder,
   ChannelSelectMenuBuilder,
   RoleSelectMenuBuilder,
   ChannelType,
-  ButtonBuilder,
-  ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  EmbedBuilder,
-  PermissionFlagsBits,
+  SlashCommandBuilder,
   REST,
-  Routes,
-  SlashCommandBuilder
+  Routes
 } = require('discord.js');
 
-console.log('[DIAGNÓSTICO] CarregANDO dependências e iniciando cliente...');
-
-// 1. CAPTURA GLOBAL DE ERROS (Impede travamentos silenciosos)
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('[ERRO NÃO TRATADO]', reason);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('[EXCEÇÃO NÃO CAPTURADA]', error);
-});
-
-// 2. INICIALIZAÇÃO DO CLIENT
+// Instância do Client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
-  ]
+    GatewayIntentBits.MessageContent
+  ],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
-// 3. ESTRUTURA DE CONFIGURAÇÃO TEMPORÁRIA
-const config = {
+// Banco de dados em memória (substitua por um banco real se necessário)
+const db = {
   welcomeChannel: null,
-  exitChannel: null,
+  welcomeBanner: null,
+  leaveChannel: null,
+  leaveBanner: null,
   autoRole: null,
   ticketCategory: null,
-  userSelectedChannel: null
+  logChannel: null
 };
 
-// DEFINIÇÃO DOS COMANDOS EM BARRA (SLASH COMMANDS)
+// ==========================================
+// REGISTRO DE COMANDOS SLASH (/cv e /painel)
+// ==========================================
 const commands = [
   new SlashCommandBuilder()
-    .setName('painel-administrativo')
-    .setDescription('Abre o painel de configuração do servidor'),
+    .setName('painel')
+    .setDescription('Abre o painel administrativo de configurações.'),
   new SlashCommandBuilder()
-    .setName('setup-ticket')
-    .setDescription('Configura o sistema de tickets')
-].map(command => command.toJSON());
+    .setName('cv')
+    .setDescription('Abre o formulário para criar uma embed personalizada.')
+];
 
-// 4. EVENTO READY + REGISTRO DOS COMANDOS EM BARRA NO DISCORD
 client.once('ready', async () => {
-  console.log(`[ONLINE] Bot conectado com sucesso como: ${client.user.tag}`);
+  console.log(`Bot online como ${client.user.tag} (Atualização v15)`);
 
+  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN || 'SEU_TOKEN_AQUI');
   try {
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOK);
-    console.log('[DIAGNÓSTICO] Registrando comandos em barra (Slash Commands)...');
-
+    console.log('Registrando comandos Slash...');
     await rest.put(
       Routes.applicationCommands(client.user.id),
       { body: commands }
     );
-
-    console.log('[SUCESSO] Comandos em barra registrados globalmente com sucesso!');
+    console.log('Comandos registrados com sucesso!');
   } catch (error) {
-    console.error('[ERRO REGISTRO COMANDOS]', error);
+    console.error('Erro ao registrar comandos:', error);
   }
 });
 
-// 5. EVENTOS DE ENTRADA/SAÍDA DE MEMBROS (AUTOROLE E BOAS-VINDAS)
-client.on('guildMemberAdd', async (member) => {
-  try {
-    if (config.autoRole) {
-      const role = member.guild.roles.cache.get(config.autoRole);
-      if (role) await member.roles.add(role);
-    }
-    if (config.welcomeChannel) {
-      const channel = member.guild.channels.cache.get(config.welcomeChannel);
-      if (channel) {
-        const embed = new EmbedBuilder()
-          .setTitle('Boas-Vindas!')
-          .setDescription(`Olá ${member}, seja bem-vindo(a) ao **${member.guild.name}**!`)
-          .setColor('#00FF00')
-          .setThumbnail(member.user.displayAvatarURL());
-        await channel.send({ embeds: [embed] });
-      }
-    }
-  } catch (err) {
-    console.error('Erro no evento guildMemberAdd:', err);
-  }
-});
-
-client.on('guildMemberRemove', async (member) => {
-  try {
-    if (config.exitChannel) {
-      const channel = member.guild.channels.cache.get(config.exitChannel);
-      if (channel) {
-        const embed = new EmbedBuilder()
-          .setTitle('Até mais!')
-          .setDescription(`${member.user.tag} saiu do servidor.`)
-          .setColor('#FF0000');
-        await channel.send({ embeds: [embed] });
-      }
-    }
-  } catch (err) {
-    console.error('Erro no evento guildMemberRemove:', err);
-  }
-});
-
-// 6. PROCESSAMENTO DE INTERAÇÕES (COMANDOS EM BARRA, MENUS E BOTÕES)
+// ==========================================
+// MANIPULAÇÃO DE INTERAÇÕES
+// ==========================================
 client.on('interactionCreate', async (interaction) => {
-  try {
-    // Trata os Comandos em Barra
-    if (interaction.isChatInputCommand()) {
-      const { commandName } = interaction;
+  // Comandos Slash
+  if (interaction.isChatInputCommand()) {
+    if (interaction.commandName === 'painel') {
+      const embed = new EmbedBuilder()
+        .setTitle('⚙️ Painel de Configuração - Green Otimizações')
+        .setDescription('Selecione abaixo o sistema que deseja configurar no servidor:')
+        .addFields(
+          { name: '👋 Boas-Vindas', value: db.welcomeChannel ? `<#${db.welcomeChannel}>` : 'Não configurado', inline: true },
+          { name: '🚪 Saída', value: db.leaveChannel ? `<#${db.leaveChannel}>` : 'Não configurado', inline: true },
+          { name: '🎭 AutoRole', value: db.autoRole ? `<@&${db.autoRole}>` : 'Não configurado', inline: true },
+          { name: '🎟️ Categoria de Tickets', value: db.ticketCategory ? `<#${db.ticketCategory}>` : 'Não configurada', inline: true },
+          { name: '📜 Logs Gerais', value: db.logChannel ? `<#${db.logChannel}>` : 'Não configurado', inline: true }
+        )
+        .setColor('#00FF00')
+        .setTimestamp();
 
-      if (commandName === 'painel-administrativo') {
-        const row = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId('menu_painel')
-            .setPlaceholder('Selecione uma opção de configuração...')
-            .addOptions([
-              { label: 'Canal de Boas-Vindas', value: 'set_welcome', description: 'Define o canal de boas-vindas' },
-              { label: 'Canal de Saída', value: 'set_exit', description: 'Define o canal de saída' },
-              { label: 'Cargo Automático', value: 'set_autorole', description: 'Define o cargo para novos membros' }
-            ])
-        );
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_welcome').setLabel('Boas-Vindas & AutoRole').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('btn_leave').setLabel('Saída').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_tickets').setLabel('Tickets').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('btn_logs').setLabel('Logs').setStyle(ButtonStyle.Danger)
+      );
 
-        const embed = new EmbedBuilder()
-          .setTitle('Painel Administrativo')
-          .setDescription('Selecione uma opção abaixo para configurar:')
-          .setColor('#5865F2');
-
-        return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-      }
-
-      if (commandName === 'setup-ticket') {
-        return interaction.reply({ content: 'Sistema de tickets em desenvolvimento!', ephemeral: true });
-      }
+      return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
     }
 
-    // Trata Seleção de Menus
-    if (interaction.isStringSelectMenu()) {
-      if (interaction.customId === 'menu_painel') {
-        const selected = interaction.values[0];
+    if (interaction.commandName === 'cv') {
+      const modal = new ModalBuilder()
+        .setCustomId('modal_cv')
+        .setTitle('Criar Embed Personalizada');
 
-        if (selected === 'set_welcome') {
-          const row = new ActionRowBuilder().addComponents(
-            new ChannelSelectMenuBuilder()
-              .setCustomId('select_welcome_channel')
-              .setPlaceholder('Escolha o canal de boas-vindas')
-              .addChannelTypes(ChannelType.GuildText)
-          );
-          return interaction.reply({ content: 'Selecione o canal de boas-vindas:', components: [row], ephemeral: true });
-        }
+      const titleInput = new TextInputBuilder()
+        .setCustomId('cv_title')
+        .setLabel('Título da Embed')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
 
-        if (selected === 'set_exit') {
-          const row = new ActionRowBuilder().addComponents(
-            new ChannelSelectMenuBuilder()
-              .setCustomId('select_exit_channel')
-              .setPlaceholder('Escolha o canal de saída')
-              .addChannelTypes(ChannelType.GuildText)
-          );
-          return interaction.reply({ content: 'Selecione o canal de saída:', components: [row], ephemeral: true });
-        }
+      const descInput = new TextInputBuilder()
+        .setCustomId('cv_description')
+        .setLabel('Descrição / Conteúdo')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true);
 
-        if (selected === 'set_autorole') {
-          const row = new ActionRowBuilder().addComponents(
-            new RoleSelectMenuBuilder()
-              .setCustomId('select_auto_role')
-              .setPlaceholder('Escolha o cargo automático')
-          );
-          return interaction.reply({ content: 'Selecione o cargo para novos membros:', components: [row], ephemeral: true });
-        }
-      }
+      const imageInput = new TextInputBuilder()
+        .setCustomId('cv_image')
+        .setLabel('URL da Imagem / Banner (Opcional)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false);
+
+      const colorInput = new TextInputBuilder()
+        .setCustomId('cv_color')
+        .setLabel('Cor Hexadecimal (Ex: #00FF00)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false);
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(titleInput),
+        new ActionRowBuilder().addComponents(descInput),
+        new ActionRowBuilder().addComponents(imageInput),
+        new ActionRowBuilder().addComponents(colorInput)
+      );
+
+      return interaction.showModal(modal);
+    }
+  }
+
+  // Envio de Formulário Modal (/cv)
+  if (interaction.isModalSubmit() && interaction.customId === 'modal_cv') {
+    const title = interaction.fields.getTextInputValue('cv_title');
+    const description = interaction.fields.getTextInputValue('cv_description');
+    const image = interaction.fields.getTextInputValue('cv_image');
+    const color = interaction.fields.getTextInputValue('cv_color') || '#00FF00';
+
+    const embed = new EmbedBuilder()
+      .setTitle(title)
+      .setDescription(description)
+      .setColor(color.startsWith('#') ? color : '#00FF00')
+      .setTimestamp();
+
+    if (image && (image.startsWith('http://') || image.startsWith('https://'))) {
+      embed.setImage(image);
     }
 
-    // Trata Escolha de Canais
-    if (interaction.isChannelSelectMenu()) {
-      if (interaction.customId === 'select_welcome_channel') {
-        config.welcomeChannel = interaction.values[0];
-        return interaction.reply({ content: `Canal de boas-vindas configurado para <#${config.welcomeChannel}>.`, ephemeral: true });
-      }
-      if (interaction.customId === 'select_exit_channel') {
-        config.exitChannel = interaction.values[0];
-        return interaction.reply({ content: `Canal de saída configurado para <#${config.exitChannel}>.`, ephemeral: true });
-      }
+    await interaction.channel.send({ embeds: [embed] });
+    return interaction.reply({ content: 'Embed criada e enviada com sucesso neste canal!', ephemeral: true });
+  }
+
+  // Interações de Botões do Painel
+  if (interaction.isButton()) {
+    if (interaction.customId === 'btn_welcome') {
+      const channelSelect = new ChannelSelectMenuBuilder()
+        .setCustomId('select_welcome_channel')
+        .setPlaceholder('Selecione o canal de boas-vindas')
+        .addChannelTypes(ChannelType.GuildText);
+
+      const roleSelect = new RoleSelectMenuBuilder()
+        .setCustomId('select_autorole')
+        .setPlaceholder('Selecione o cargo automático (AutoRole)');
+
+      return interaction.reply({
+        content: 'Configure as Boas-Vindas e o AutoRole:',
+        components: [
+          new ActionRowBuilder().addComponents(channelSelect),
+          new ActionRowBuilder().addComponents(roleSelect)
+        ],
+        ephemeral: true
+      });
     }
 
-    // Trata Escolha de Cargos (AutoRole)
-    if (interaction.isRoleSelectMenu()) {
-      if (interaction.customId === 'select_auto_role') {
-        config.autoRole = interaction.values[0];
-        return interaction.reply({ content: `Cargo automático configurado para <@&${config.autoRole}>.`, ephemeral: true });
-      }
+    if (interaction.customId === 'btn_leave') {
+      const channelSelect = new ChannelSelectMenuBuilder()
+        .setCustomId('select_leave_channel')
+        .setPlaceholder('Selecione o canal de saída')
+        .addChannelTypes(ChannelType.GuildText);
+
+      return interaction.reply({
+        content: 'Configure o canal de saídas:',
+        components: [new ActionRowBuilder().addComponents(channelSelect)],
+        ephemeral: true
+      });
     }
-  } catch (err) {
-    console.error('Erro ao processar interação:', err);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: 'Ocorreu um erro ao executar este comando.', ephemeral: true });
+
+    if (interaction.customId === 'btn_tickets') {
+      const categorySelect = new ChannelSelectMenuBuilder()
+        .setCustomId('select_ticket_category')
+        .setPlaceholder('Selecione a categoria dos tickets')
+        .addChannelTypes(ChannelType.GuildCategory);
+
+      return interaction.reply({
+        content: 'Configure onde os tickets serão criados:',
+        components: [new ActionRowBuilder().addComponents(categorySelect)],
+        ephemeral: true
+      });
+    }
+
+    if (interaction.customId === 'btn_logs') {
+      const channelSelect = new ChannelSelectMenuBuilder()
+        .setCustomId('select_log_channel')
+        .setPlaceholder('Selecione o canal de logs gerais')
+        .addChannelTypes(ChannelType.GuildText);
+
+      return interaction.reply({
+        content: 'Configure o canal para enviar os logs gerais de mensagens:',
+        components: [new ActionRowBuilder().addComponents(channelSelect)],
+        ephemeral: true
+      });
+    }
+  }
+
+  // Interações de Select Menus
+  if (interaction.isChannelSelectMenu() || interaction.isRoleSelectMenu()) {
+    const value = interaction.values[0];
+
+    if (interaction.customId === 'select_welcome_channel') {
+      db.welcomeChannel = value;
+      return interaction.update({ content: `✅ Canal de Boas-Vindas alterado para: <#${value}>`, components: [] });
+    }
+
+    if (interaction.customId === 'select_autorole') {
+      db.autoRole = value;
+      return interaction.update({ content: `✅ Cargo de AutoRole alterado para: <@&${value}>`, components: [] });
+    }
+
+    if (interaction.customId === 'select_leave_channel') {
+      db.leaveChannel = value;
+      return interaction.update({ content: `✅ Canal de Saída alterado para: <#${value}>`, components: [] });
+    }
+
+    if (interaction.customId === 'select_ticket_category') {
+      db.ticketCategory = value;
+      return interaction.update({ content: `✅ Categoria de Tickets definida para: <#${value}>`, components: [] });
+    }
+
+    if (interaction.customId === 'select_log_channel') {
+      db.logChannel = value;
+      return interaction.update({ content: `✅ Canal de Logs Gerais alterado para: <#${value}>`, components: [] });
     }
   }
 });
 
-// 7. LOGIN USANDO A VARIÁVEL DE AMBIENTE
-client.login(process.env.DISCORD_TOK).catch(err => {
-  console.error('[ERRO DE LOGIN] Falha ao autenticar o bot:', err.message);
+// ==========================================
+// EVENTOS (Boas-Vindas, Saída e Logs)
+// ==========================================
+
+// Entrou no Servidor
+client.on('guildMemberAdd', async (member) => {
+  // AutoRole
+  if (db.autoRole) {
+    try {
+      await member.roles.add(db.autoRole);
+    } catch (err) {
+      console.error('Erro ao adicionar AutoRole:', err);
+    }
+  }
+
+  // Boas-Vindas
+  if (db.welcomeChannel) {
+    const channel = member.guild.channels.cache.get(db.welcomeChannel);
+    if (channel) {
+      const embed = new EmbedBuilder()
+        .setTitle('👋 Bem-vindo(a)!')
+        .setDescription(`Olá ${member}, seja muito bem-vindo(a) ao servidor **${member.guild.name}**!`)
+        .setColor('#00FF00')
+        .setThumbnail(member.user.displayAvatarURL())
+        .setTimestamp();
+
+      channel.send({ embeds: [embed] });
+    }
+  }
 });
+
+// Saiu do Servidor (Mensagem no canal configurado, sem log de auditoria)
+client.on('guildMemberRemove', async (member) => {
+  if (db.leaveChannel) {
+    const channel = member.guild.channels.cache.get(db.leaveChannel);
+    if (channel) {
+      const embed = new EmbedBuilder()
+        .setTitle('🚪 Membro Saiu')
+        .setDescription(`O membro **${member.user.tag}** saiu do servidor.`)
+        .setColor('#FF0000')
+        .setTimestamp();
+
+      channel.send({ embeds: [embed] });
+    }
+  }
+});
+
+// Log de Mensagem Apagada
+client.on('messageDelete', (message) => {
+  if (message.author?.bot || !db.logChannel) return;
+
+  const logChannel = message.guild?.channels.cache.get(db.logChannel);
+  if (!logChannel) return;
+
+  const embed = new EmbedBuilder()
+    .setTitle('🗑️ Mensagem Apagada')
+    .addFields(
+      { name: 'Autor', value: `${message.author.tag} (${message.author.id})`, inline: true },
+      { name: 'Canal', value: `<#${message.channel.id}>`, inline: true },
+      { name: 'Conteúdo', value: message.content || '*Sem texto (imagem/embed)*' }
+    )
+    .setColor('#FF4500')
+    .setTimestamp();
+
+  logChannel.send({ embeds: [embed] });
+});
+
+// Log de Mensagem Editada
+client.on('messageUpdate', (oldMessage, newMessage) => {
+  if (oldMessage.author?.bot || !db.logChannel) return;
+  if (oldMessage.content === newMessage.content) return;
+
+  const logChannel = oldMessage.guild?.channels.cache.get(db.logChannel);
+  if (!logChannel) return;
+
+  const embed = new EmbedBuilder()
+    .setTitle('✏️ Mensagem Editada')
+    .addFields(
+      { name: 'Autor', value: `${oldMessage.author.tag} (${oldMessage.author.id})`, inline: true },
+      { name: 'Canal', value: `<#${oldMessage.channel.id}>`, inline: true },
+      { name: 'Antes', value: oldMessage.content || '*Vazio*' },
+      { name: 'Depois', value: newMessage.content || '*Vazio*' }
+    )
+    .setColor('#FFA500')
+    .setTimestamp();
+
+  logChannel.send({ embeds: [embed] });
+});
+
+// ==========================================
+// CAPTURA GLOBAL DE ERROS (process.on)
+// ==========================================
+process.on('unhandledRejection', (reason, promise) => {
+  console.error(' [Erro Não Tratado - Rejeição de Promise]:', reason);
+});
+
+process.on('uncaughtException', (error, origin) => {
+  console.error(' [Erro Não Tratado - Exceção]:', error, origin);
+});
+
+// Inicialização do Bot
+client.login(process.env.DISCORD_TOKEN || 'SEU_TOKEN_AQUI');
