@@ -92,6 +92,7 @@ const COLOR_OPTIONS = [
   { label: 'Dark / Escuro', description: 'Tom escuro', value: '#2F3136', emoji: '⬛' }
 ];
 
+// LISTA COMPLETA DE COMANDOS SLASH
 const commands = [
   new SlashCommandBuilder()
     .setName('painel')
@@ -122,30 +123,35 @@ const commands = [
     .addIntegerOption(opt => opt.setName('quantidade').setDescription('Número de mensagens (1 a 100).').setMinValue(1).setMaxValue(100).setRequired(true))
 ];
 
-// INICIALIZAÇÃO E REGISTRO INSTANTÂNEO DE COMANDOS
+// EVENTO READY E REGISTRO DE COMANDOS
 client.once(Events.ClientReady, async () => {
   console.log(`[SISTEMA] Bot inicializado com sucesso como ${client.user.tag}`);
 
-  // Conexão Assíncrona com MongoDB Atlas
+  // Conexão ao MongoDB Atlas
   if (process.env.MONGO_URI) {
     mongoose.connect(process.env.MONGO_URI)
-      .then(() => console.log('[BANCO] MongoDB Atlas Conectado!'))
-      .catch(err => console.error('[ERRO CONEXAO MONGO]:', err.message));
+      .then(() => console.log('[BANCO] MongoDB Atlas Conectado com sucesso!'))
+      .catch(err => console.error('[ERRO MONGO]:', err.message));
   }
 
-  // Registro de Comandos Slash (Instantâneo se GUILD_ID for informado)
+  // Registro dinâmico de comandos Slash
   if (process.env.DISCORD_TOKEN) {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try {
-      if (process.env.GUILD_ID) {
-        await rest.put(Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID), { body: commands });
-        console.log(`[SLASH] Comandos registrados INSTANTANEAMENTE no servidor (${process.env.GUILD_ID})!`);
+      // Registra nos servidores onde o bot já está conectado
+      const guilds = client.guilds.cache.map(g => g.id);
+      
+      if (guilds.length > 0) {
+        for (const guildId of guilds) {
+          await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body: commands });
+          console.log(`[SLASH] Comandos atualizados INSTANTANEAMENTE no servidor ID: ${guildId}`);
+        }
       } else {
         await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-        console.log('[SLASH] Comandos globais registrados (Pode levar até 1h para atualizar se for global).');
+        console.log('[SLASH] Comandos globais registrados no Discord.');
       }
     } catch (error) {
-      console.error('[ERRO REGISTRO SLASH]:', error.message);
+      console.error('[ERRO REGISTRO SLASH]:', error);
     }
   }
 });
@@ -191,7 +197,7 @@ client.on('interactionCreate', async (interaction) => {
   try {
     if (!interaction.guild) return;
     let db = await getGuildData(interaction.guild.id);
-    if (!db) return interaction.reply({ content: '❌ Erro ao conectar ao MongoDB Atlas. Verifique as credenciais.', ephemeral: true });
+    if (!db) return interaction.reply({ content: '❌ Erro ao conectar ao MongoDB Atlas.', ephemeral: true });
 
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'painel') {
@@ -284,10 +290,7 @@ client.on('interactionCreate', async (interaction) => {
         db.markModified('welcomeBanner');
         await db.save();
 
-        return interaction.update({
-          embeds: [buildPainelEmbed(interaction.guild, db)],
-          components: buildPainelButtons()
-        });
+        return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
       }
 
       if (interaction.customId === 'modal_edit_leave') {
@@ -298,20 +301,14 @@ client.on('interactionCreate', async (interaction) => {
         db.markModified('leaveBanner');
         await db.save();
 
-        return interaction.update({
-          embeds: [buildPainelEmbed(interaction.guild, db)],
-          components: buildPainelButtons()
-        });
+        return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
       }
     }
 
     if (interaction.isButton()) {
       if (interaction.customId === 'btn_refresh_panel') {
         const updatedDb = await getGuildData(interaction.guild.id);
-        await interaction.update({
-          embeds: [buildPainelEmbed(interaction.guild, updatedDb)],
-          components: buildPainelButtons()
-        });
+        await interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updatedDb)], components: buildPainelButtons() });
         return interaction.followUp({ content: '🔄 **Painel sincronizado com o MongoDB Atlas!**', ephemeral: true });
       }
 
@@ -493,7 +490,6 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId === 'select_ticket_category') { db.ticketCategory = val; db.markModified('ticketCategory'); }
       
       const savedDb = await db.save();
-
       return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, savedDb)], components: buildPainelButtons() });
     }
 
@@ -503,7 +499,6 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId === 'select_ticket_role') { db.ticketSupportRole = val; db.markModified('ticketSupportRole'); }
       
       const savedDb = await db.save();
-
       return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, savedDb)], components: buildPainelButtons() });
     }
 
@@ -512,7 +507,6 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId === 'select_theme_color') { db.themeColor = val; db.markModified('themeColor'); }
       
       const savedDb = await db.save();
-
       return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, savedDb)], components: buildPainelButtons() });
     }
 
@@ -586,4 +580,3 @@ process.on('unhandledRejection', r => console.error('[UNHANDLED REJECTION]:', r)
 process.on('uncaughtException', e => console.error('[UNCAUGHT EXCEPTION]:', e));
 
 client.login(process.env.DISCORD_TOKEN);
-
