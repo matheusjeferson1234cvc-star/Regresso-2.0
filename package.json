@@ -1,14 +1,17 @@
-{
-  "name": "discord-ticket-bot",
+l{
+  "name": "bot-macaco",
   "version": "1.0.0",
-  "description": "Bot profissional de tickets para Discord com suporte a Discloud",
+  "description": "Bot para Discord",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "deploy": "node deploy-commands.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "mongoose": "^8.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
