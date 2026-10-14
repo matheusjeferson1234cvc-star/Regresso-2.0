@@ -1,13 +1,32 @@
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { 
+  Client, 
+  GatewayIntentBits, 
+  EmbedBuilder, 
+  ActionRowBuilder, 
+  ButtonBuilder, 
+  ButtonStyle, 
+  ChannelType, 
+  PermissionFlagsBits, 
+  ModalBuilder, 
+  TextInputBuilder, 
+  TextInputStyle 
+} = require('discord.js');
 require('dotenv').config();
 const fs = require('fs');
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+// Inicializa o cliente do bot
+const client = new Client({ 
+  intents: [
+    GatewayIntentBits.Guilds, 
+    GatewayIntentBits.GuildMessages, 
+    GatewayIntentBits.MessageContent
+  ] 
+});
 
 const configFile = './data/config.json';
 const ticketsFile = './data/tickets.json';
 
-// Ensure data directory and JSON files exist
+// Cria a pasta e os arquivos de configuração padrão caso não existam
 if (!fs.existsSync('./data')) {
   fs.mkdirSync('./data');
 }
@@ -29,14 +48,19 @@ if (!fs.existsSync(ticketsFile)) {
 let config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
 let tickets = JSON.parse(fs.readFileSync(ticketsFile, 'utf8'));
 
+// Evento quando o bot liga
 client.on('ready', () => {
-  console.log(`Bot conectado como ${client.user.tag}`);
+  console.log(`✅ Bot conectado com sucesso como: ${client.user.tag}`);
 });
 
+// Manipulador de interações (Comandos, Modais e Botões)
 client.on('interactionCreate', async interaction => {
+  
+  // 1. COMANDOS DE TEXTO (SLASH COMMANDS)
   if (interaction.isChatInputCommand()) {
     const { commandName } = interaction;
 
+    // Comando: /painel
     if (commandName === 'painel') {
       const embed = new EmbedBuilder()
         .setTitle(config.panelTitle || 'Central de Suporte')
@@ -46,18 +70,18 @@ client.on('interactionCreate', async interaction => {
 
       if (config.panelImage) embed.setImage(config.panelImage);
 
-      const row = new ActionRowBuilder()
-        .addComponents(
-          new ButtonBuilder()
-            .setCustomId('create_ticket')
-            .setLabel('Abrir Ticket')
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji('📩')
-        );
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('create_ticket')
+          .setLabel('Abrir Ticket')
+          .setStyle(ButtonStyle.Primary)
+          .setEmoji('📩')
+      );
 
       await interaction.reply({ embeds: [embed], components: [row] });
     }
 
+    // Comando: /configurar
     if (commandName === 'configurar') {
       const modal = new ModalBuilder()
         .setCustomId('config_panel_modal')
@@ -92,6 +116,7 @@ client.on('interactionCreate', async interaction => {
     }
   }
 
+  // 2. FORMULÁRIOS (MODAIS)
   if (interaction.isModalSubmit()) {
     if (interaction.customId === 'config_panel_modal') {
       config.panelTitle = interaction.fields.getTextInputValue('panel_title');
@@ -99,15 +124,16 @@ client.on('interactionCreate', async interaction => {
       config.panelImage = interaction.fields.getTextInputValue('panel_image');
 
       fs.writeFileSync(configFile, JSON.stringify(config, null, 2));
-      await interaction.reply({ content: 'Configurações do painel atualizadas!', ephemeral: true });
+      await interaction.reply({ content: '✅ Configurações do painel atualizadas!', ephemeral: true });
     }
   }
 
+  // 3. BOTÕES (ABRIR, FECHAR E ASSUMIR TICKET)
   if (interaction.isButton()) {
-    if (interaction.customId === 'create_ticket') {
-      const guild = interaction.guild;
-      const member = interaction.member;
+    const { guild, member, channel } = interaction;
 
+    // Ação: Abrir Ticket
+    if (interaction.customId === 'create_ticket') {
       const ticketChannel = await guild.channels.create({
         name: `ticket-${member.user.username}`,
         type: ChannelType.GuildText,
@@ -136,26 +162,25 @@ client.on('interactionCreate', async interaction => {
         .setDescription('Por favor, descreva seu problema. Nossa equipe responderá em breve.')
         .setColor('#800080');
 
-      const row = new ActionRowBuilder()
-        .addComponents(
-          new ButtonBuilder()
-            .setCustomId('close_ticket')
-            .setLabel('Fechar Ticket')
-            .setStyle(ButtonStyle.Danger)
-            .setEmoji('🔒'),
-          new ButtonBuilder()
-            .setCustomId('claim_ticket')
-            .setLabel('Assumir Ticket')
-            .setStyle(ButtonStyle.Success)
-            .setEmoji('🙋‍♂️')
-        );
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('close_ticket')
+          .setLabel('Fechar Ticket')
+          .setStyle(ButtonStyle.Danger)
+          .setEmoji('🔒'),
+        new ButtonBuilder()
+          .setCustomId('claim_ticket')
+          .setLabel('Assumir Ticket')
+          .setStyle(ButtonStyle.Success)
+          .setEmoji('🙋‍♂️')
+      );
 
-      await ticketChannel.send({ content: `${member} um membro da equipe entrará em contato.`, embeds: [embed], components: [row] });
-      await interaction.reply({ content: `Ticket criado em ${ticketChannel}!`, ephemeral: true });
+      await ticketChannel.send({ content: `${member}, um membro da equipe entrará em contato.`, embeds: [embed], components: [row] });
+      await interaction.reply({ content: `✅ Ticket criado em ${ticketChannel}!`, ephemeral: true });
     }
 
+    // Ação: Fechar Ticket
     if (interaction.customId === 'close_ticket') {
-      const channel = interaction.channel;
       await channel.delete();
       
       const index = tickets.findIndex(t => t.channelId === channel.id);
@@ -165,8 +190,8 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
+    // Ação: Assumir Ticket
     if (interaction.customId === 'claim_ticket') {
-      const member = interaction.member;
       const embed = EmbedBuilder.from(interaction.message.embeds[0]);
       embed.addFields({ name: 'Assumido por', value: member.user.tag });
       
@@ -174,11 +199,12 @@ client.on('interactionCreate', async interaction => {
       row.components[1].setDisabled(true);
 
       await interaction.message.edit({ embeds: [embed], components: [row] });
-      await interaction.reply({ content: `Ticket assumido por ${member}.`, ephemeral: true });
+      await interaction.reply({ content: `✅ Ticket assumido por ${member}.`, ephemeral: true });
     }
   }
 });
 
+// LOGS DO SISTEMA
 client.on('channelCreate', async channel => {
   if (!config.logChannelId) return;
   const logChannel = client.channels.cache.get(config.logChannelId);
@@ -223,4 +249,5 @@ client.on('messageDelete', async message => {
   logChannel.send({ embeds: [embed] }).catch(console.error);
 });
 
+// Conecta o bot no Discord usando o Token das variáveis de ambiente
 client.login(process.env.DISCORD_TOKEN);
