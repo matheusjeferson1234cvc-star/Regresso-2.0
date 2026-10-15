@@ -30,7 +30,6 @@ const admin = require('firebase-admin');
 let db;
 
 try {
-  // Resolve o caminho do arquivo JSON definido na variável da Discloud
   const credentialsFileName = process.env.GOOGLE_APPLICATION_CREDENTIALS || 'bot-cets-firebase-adminsdk-fbsvc-94a3a86826.json';
   const jsonPath = path.resolve(process.cwd(), credentialsFileName);
 
@@ -64,41 +63,43 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember]
 });
 
+// Dados padrão para fallback de emergência
+const DEFAULT_GUILD_DATA = {
+  themeColor: '#57F287',
+  welcomeChannel: null,
+  welcomeMessage: 'Olá {user}, seja bem-vindo(a) ao **{server}**!',
+  welcomeBanner: null,
+  welcomeColor: '#57F287',
+  leaveChannel: null,
+  leaveMessage: 'O membro **{user.tag}** saiu do servidor.',
+  leaveBanner: null,
+  leaveColor: '#ED4245',
+  autoRole: null,
+  ticketChannel: null,
+  ticketCategory: null,
+  ticketSupportRole: null,
+  ticketTitle: '🎟️ Central de Atendimento & Suporte',
+  ticketDescription: 'Selecione a opção desejada abaixo para abrir seu atendimento.',
+  ticketColor: '#57F287',
+  ticketCategories: [
+    { id: 'cat_duvidas', label: 'Dúvidas Gerais', description: 'Tire suas dúvidas com a equipe.', emoji: '❓' },
+    { id: 'cat_suporte', label: 'Suporte Técnico', description: 'Atendimento e suporte técnico.', emoji: '🛠️' }
+  ],
+  logChannel: null
+};
+
 // 📌 FUNÇÃO PARA OBTER / CRIAR CONFIGURAÇÕES NO FIRESTORE
 async function getGuildData(guildId) {
   try {
     if (!db) {
       console.error('[ERRO FIRESTORE]: Instância do banco não inicializada.');
-      return null;
+      return { guildId, ...DEFAULT_GUILD_DATA };
     }
     const docRef = db.collection('guilds').doc(guildId);
     const docSnap = await docRef.get();
 
     if (!docSnap.exists) {
-      const defaultData = {
-        guildId,
-        themeColor: '#57F287',
-        welcomeChannel: null,
-        welcomeMessage: 'Olá {user}, seja bem-vindo(a) ao **{server}**!',
-        welcomeBanner: null,
-        welcomeColor: '#57F287',
-        leaveChannel: null,
-        leaveMessage: 'O membro **{user.tag}** saiu do servidor.',
-        leaveBanner: null,
-        leaveColor: '#ED4245',
-        autoRole: null,
-        ticketChannel: null,
-        ticketCategory: null,
-        ticketSupportRole: null,
-        ticketTitle: '🎟️ Central de Atendimento & Suporte',
-        ticketDescription: 'Selecione a opção desejada abaixo para abrir seu atendimento.',
-        ticketColor: '#57F287',
-        ticketCategories: [
-          { id: 'cat_duvidas', label: 'Dúvidas Gerais', description: 'Tire suas dúvidas com a equipe.', emoji: '❓' },
-          { id: 'cat_suporte', label: 'Suporte Técnico', description: 'Atendimento e suporte técnico.', emoji: '🛠️' }
-        ],
-        logChannel: null
-      };
+      const defaultData = { guildId, ...DEFAULT_GUILD_DATA };
       await docRef.set(defaultData);
       return defaultData;
     }
@@ -106,7 +107,7 @@ async function getGuildData(guildId) {
     return docSnap.data();
   } catch (error) {
     console.error('[ERRO FIRESTORE]:', error.message);
-    return null;
+    return { guildId, ...DEFAULT_GUILD_DATA };
   }
 }
 
@@ -115,8 +116,9 @@ async function updateGuildData(guildId, updates) {
   try {
     if (!db) return null;
     const docRef = db.collection('guilds').doc(guildId);
-    await docRef.update(updates);
-    return (await docRef.get()).data();
+    await docRef.set(updates, { merge: true });
+    const updatedSnap = await docRef.get();
+    return updatedSnap.data();
   } catch (error) {
     console.error('[ERRO ATUALIZAR FIRESTORE]:', error.message);
     return null;
@@ -232,7 +234,7 @@ client.on('interactionCreate', async (interaction) => {
     // 📌 PROCESSAMENTO DOS COMANDOS SLASH
     if (interaction.isChatInputCommand()) {
 
-      // 1. Comando /cv (Exibe modal sem atraso prévio)
+      // 1. Comando /cv
       if (interaction.commandName === 'cv') {
         const modal = new ModalBuilder().setCustomId('modal_cv').setTitle('🎨 Criar Embed Personalizada');
         modal.addComponents(
@@ -246,11 +248,16 @@ client.on('interactionCreate', async (interaction) => {
 
       // 2. Comando /painel
       if (interaction.commandName === 'painel') {
-        await interaction.deferReply({ ephemeral: true });
-        let guildData = await getGuildData(interaction.guild.id);
-        if (!guildData) return interaction.editReply({ content: '❌ Erro ao conectar ao Firebase Firestore.' });
-
-        return interaction.editReply({ embeds: [buildPainelEmbed(interaction.guild, guildData)], components: buildPainelButtons() });
+        try {
+          await interaction.deferReply({ ephemeral: true });
+          let guildData = await getGuildData(interaction.guild.id);
+          return interaction.editReply({ embeds: [buildPainelEmbed(interaction.guild, guildData)], components: buildPainelButtons() });
+        } catch (err) {
+          console.error('[ERRO COMANDO PAINEL]:', err);
+          if (interaction.deferred) {
+            return interaction.editReply({ content: '❌ Ocorreu um erro ao gerar o painel.' });
+          }
+        }
       }
 
       // 3. Comando /ban
@@ -309,16 +316,18 @@ client.on('interactionCreate', async (interaction) => {
         const amount = interaction.options.getInteger('quantidade');
         try {
           const deleted = await interaction.channel.bulkDelete(amount, true);
-          return interaction.reply({ content: `🧹 **${deleted.size}** mensagens apagadas.`, ephemeral: true });
+          if (deleted.size === 0) {
+            return interaction.reply({ content: '⚠️ Nenhuma mensagem apagada. Mensagens enviadas há mais de 14 dias não podem ser apagadas em massa.', ephemeral: true });
+          }
+          return interaction.reply({ content: `🧹 **${deleted.size}** mensagens apagadas com sucesso!`, ephemeral: true });
         } catch (err) {
-          return interaction.reply({ content: '❌ Falha ao apagar mensagens. Lembre-se de que mensagens com mais de 14 dias não podem ser apagadas em massa.', ephemeral: true });
+          return interaction.reply({ content: '❌ Falha ao apagar mensagens. Verifique as permissões do bot no canal.', ephemeral: true });
         }
       }
     }
 
-    // 📌 PROCESSAMENTO DAS DEMASIADAS INTERAÇÕES (SUBMIT DE MODAIS, BOTÕES E MENUS)
+    // 📌 PROCESSAMENTO DE DEMAIS INTERAÇÕES (BOTÕES, MENUS E MODAIS)
     let guildData = await getGuildData(interaction.guild.id);
-    if (!guildData) return interaction.reply({ content: '❌ Erro ao conectar ao Firebase Firestore.', ephemeral: true });
 
     if (interaction.isModalSubmit()) {
       if (interaction.customId === 'modal_cv') {
@@ -348,7 +357,7 @@ client.on('interactionCreate', async (interaction) => {
           welcomeBanner: rawBanner && rawBanner.trim() !== '' ? rawBanner.trim() : null
         });
 
-        return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated)], components: buildPainelButtons() });
+        return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated || guildData)], components: buildPainelButtons() });
       }
 
       if (interaction.customId === 'modal_edit_leave') {
@@ -358,7 +367,7 @@ client.on('interactionCreate', async (interaction) => {
           leaveBanner: rawBanner && rawBanner.trim() !== '' ? rawBanner.trim() : null
         });
 
-        return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated)], components: buildPainelButtons() });
+        return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated || guildData)], components: buildPainelButtons() });
       }
     }
 
@@ -548,7 +557,7 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId === 'select_ticket_category') updates.ticketCategory = val;
       
       const updated = await updateGuildData(interaction.guild.id, updates);
-      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated)], components: buildPainelButtons() });
+      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated || guildData)], components: buildPainelButtons() });
     }
 
     if (interaction.isRoleSelectMenu()) {
@@ -558,7 +567,7 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId === 'select_ticket_role') updates.ticketSupportRole = val;
       
       const updated = await updateGuildData(interaction.guild.id, updates);
-      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated)], components: buildPainelButtons() });
+      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated || guildData)], components: buildPainelButtons() });
     }
 
     if (interaction.isStringSelectMenu()) {
@@ -567,7 +576,7 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId === 'select_theme_color') updates.themeColor = val;
       
       const updated = await updateGuildData(interaction.guild.id, updates);
-      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated)], components: buildPainelButtons() });
+      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated || guildData)], components: buildPainelButtons() });
     }
 
   } catch (err) {
