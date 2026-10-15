@@ -1,4 +1,6 @@
 require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
 
 const {
   Client,
@@ -24,17 +26,31 @@ const {
 } = require('discord.js');
 const admin = require('firebase-admin');
 
-// 📌 INICIALIZAÇÃO DO FIREBASE (Lê GOOGLE_APPLICATION_CREDENTIALS da Discloud)
-try {
-  admin.initializeApp({
-    credential: admin.credential.applicationDefault()
-  });
-  console.log('[BANCO] Firebase Admin inicializado com sucesso!');
-} catch (error) {
-  console.error('[ERRO FIREBASE]:', error.message);
-}
+// 📌 INICIALIZAÇÃO SEGURA DO FIREBASE FIRESTORE
+let db;
 
-const db = admin.firestore();
+try {
+  // Resolve o caminho do arquivo JSON definido na variável da Discloud
+  const credentialsFileName = process.env.GOOGLE_APPLICATION_CREDENTIALS || 'bot-cets-firebase-adminsdk-fbsvc-94a3a86826.json';
+  const jsonPath = path.resolve(process.cwd(), credentialsFileName);
+
+  if (fs.existsSync(jsonPath)) {
+    const serviceAccount = require(jsonPath);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    console.log('[BANCO] Firebase Admin inicializado com sucesso via arquivo de credenciais!');
+  } else {
+    admin.initializeApp({
+      credential: admin.credential.applicationDefault()
+    });
+    console.log('[BANCO] Firebase Admin inicializado com sucesso via Application Default!');
+  }
+
+  db = admin.firestore();
+} catch (error) {
+  console.error('[ERRO CRÍTICO FIREBASE]: Não foi possível inicializar o Firebase Admin:', error.message);
+}
 
 // Instância do Bot
 const client = new Client({
@@ -51,6 +67,10 @@ const client = new Client({
 // 📌 FUNÇÃO PARA OBTER / CRIAR CONFIGURAÇÕES NO FIRESTORE
 async function getGuildData(guildId) {
   try {
+    if (!db) {
+      console.error('[ERRO FIRESTORE]: Instância do banco não inicializada.');
+      return null;
+    }
     const docRef = db.collection('guilds').doc(guildId);
     const docSnap = await docRef.get();
 
@@ -93,6 +113,7 @@ async function getGuildData(guildId) {
 // 📌 FUNÇÃO PARA ATUALIZAR DADOS NO FIRESTORE
 async function updateGuildData(guildId, updates) {
   try {
+    if (!db) return null;
     const docRef = db.collection('guilds').doc(guildId);
     await docRef.update(updates);
     return (await docRef.get()).data();
