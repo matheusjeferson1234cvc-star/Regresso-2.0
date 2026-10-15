@@ -22,7 +22,19 @@ const {
   Events,
   AttachmentBuilder
 } = require('discord.js');
-const mongoose = require('mongoose');
+const admin = require('firebase-admin');
+
+// 📌 INICIALIZAÇÃO DO FIREBASE (Lê GOOGLE_APPLICATION_CREDENTIALS da Discloud)
+try {
+  admin.initializeApp({
+    credential: admin.credential.applicationDefault()
+  });
+  console.log('[BANCO] Firebase Admin inicializado com sucesso!');
+} catch (error) {
+  console.error('[ERRO FIREBASE]:', error.message);
+}
+
+const db = admin.firestore();
 
 // Instância do Bot
 const client = new Client({
@@ -36,47 +48,56 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember]
 });
 
-// 📌 SCHEMA DO BANCO DE DADOS (MONGOOSE)
-const GuildConfigSchema = new mongoose.Schema({
-  guildId: { type: String, required: true, unique: true },
-  themeColor: { type: String, default: '#57F287' },
-  welcomeChannel: { type: String, default: null },
-  welcomeMessage: { type: String, default: 'Olá {user}, seja bem-vindo(a) ao **{server}**!' },
-  welcomeBanner: { type: String, default: null },
-  welcomeColor: { type: String, default: '#57F287' },
-  leaveChannel: { type: String, default: null },
-  leaveMessage: { type: String, default: 'O membro **{user.tag}** saiu do servidor.' },
-  leaveBanner: { type: String, default: null },
-  leaveColor: { type: String, default: '#ED4245' },
-  autoRole: { type: String, default: null },
-  ticketChannel: { type: String, default: null },
-  ticketCategory: { type: String, default: null },
-  ticketSupportRole: { type: String, default: null },
-  ticketTitle: { type: String, default: '🎟️ Central de Atendimento & Suporte' },
-  ticketDescription: { type: String, default: 'Selecione a opção desejada abaixo para abrir seu atendimento.' },
-  ticketColor: { type: String, default: '#57F287' },
-  ticketCategories: {
-    type: Array,
-    default: [
-      { id: 'cat_duvidas', label: 'Dúvidas Gerais', description: 'Tire suas dúvidas com a equipe.', emoji: '❓' },
-      { id: 'cat_suporte', label: 'Suporte Técnico', description: 'Atendimento e suporte técnico.', emoji: '🛠️' }
-    ]
-  },
-  logChannel: { type: String, default: null }
-}, { timestamps: true });
-
-const GuildConfig = mongoose.model('GuildConfig', GuildConfigSchema);
-
+// 📌 FUNÇÃO PARA OBTER / CRIAR CONFIGURAÇÕES NO FIRESTORE
 async function getGuildData(guildId) {
   try {
-    if (mongoose.connection.readyState !== 1 && process.env.MONGO_URI) {
-      await mongoose.connect(process.env.MONGO_URI);
+    const docRef = db.collection('guilds').doc(guildId);
+    const docSnap = await docRef.get();
+
+    if (!docSnap.exists) {
+      const defaultData = {
+        guildId,
+        themeColor: '#57F287',
+        welcomeChannel: null,
+        welcomeMessage: 'Olá {user}, seja bem-vindo(a) ao **{server}**!',
+        welcomeBanner: null,
+        welcomeColor: '#57F287',
+        leaveChannel: null,
+        leaveMessage: 'O membro **{user.tag}** saiu do servidor.',
+        leaveBanner: null,
+        leaveColor: '#ED4245',
+        autoRole: null,
+        ticketChannel: null,
+        ticketCategory: null,
+        ticketSupportRole: null,
+        ticketTitle: '🎟️ Central de Atendimento & Suporte',
+        ticketDescription: 'Selecione a opção desejada abaixo para abrir seu atendimento.',
+        ticketColor: '#57F287',
+        ticketCategories: [
+          { id: 'cat_duvidas', label: 'Dúvidas Gerais', description: 'Tire suas dúvidas com a equipe.', emoji: '❓' },
+          { id: 'cat_suporte', label: 'Suporte Técnico', description: 'Atendimento e suporte técnico.', emoji: '🛠️' }
+        ],
+        logChannel: null
+      };
+      await docRef.set(defaultData);
+      return defaultData;
     }
-    let data = await GuildConfig.findOne({ guildId });
-    if (!data) data = await GuildConfig.create({ guildId });
-    return data;
+
+    return docSnap.data();
   } catch (error) {
-    console.error('[ERRO MONGO]:', error.message);
+    console.error('[ERRO FIRESTORE]:', error.message);
+    return null;
+  }
+}
+
+// 📌 FUNÇÃO PARA ATUALIZAR DADOS NO FIRESTORE
+async function updateGuildData(guildId, updates) {
+  try {
+    const docRef = db.collection('guilds').doc(guildId);
+    await docRef.update(updates);
+    return (await docRef.get()).data();
+  } catch (error) {
+    console.error('[ERRO ATUALIZAR FIRESTORE]:', error.message);
     return null;
   }
 }
@@ -127,18 +148,9 @@ const commands = [
 client.once(Events.ClientReady, async () => {
   console.log(`[SISTEMA] Bot inicializado com sucesso como ${client.user.tag}`);
 
-  // Conexão ao MongoDB Atlas
-  if (process.env.MONGO_URI) {
-    mongoose.connect(process.env.MONGO_URI)
-      .then(() => console.log('[BANCO] MongoDB Atlas Conectado com sucesso!'))
-      .catch(err => console.error('[ERRO MONGO]:', err.message));
-  }
-
-  // Registro dinâmico de comandos Slash
   if (process.env.DISCORD_TOKEN) {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try {
-      // Registra nos servidores onde o bot já está conectado
       const guilds = client.guilds.cache.map(g => g.id);
       
       if (guilds.length > 0) {
@@ -156,24 +168,23 @@ client.once(Events.ClientReady, async () => {
   }
 });
 
-function buildPainelEmbed(guild, db) {
-  const isMongoConnected = mongoose.connection.readyState === 1;
-  const themeColor = db?.themeColor && db.themeColor.startsWith('#') ? db.themeColor : '#2F3136';
+function buildPainelEmbed(guild, guildData) {
+  const themeColor = guildData?.themeColor && guildData.themeColor.startsWith('#') ? guildData.themeColor : '#2F3136';
 
   return new EmbedBuilder()
     .setAuthor({ name: `GESTAO • ${guild.name.toUpperCase()}`, iconURL: guild.iconURL({ dynamic: true }) || client.user.displayAvatarURL() })
     .setTitle('⚙️ Central de Configurações Administrativas')
-    .setDescription(`Gerencie os módulos do bot através das opções abaixo:\n\n**Status Banco:** ${isMongoConnected ? '🟢 `Sincronizado (MongoDB Atlas)`' : '🔴 `Erro Conexão`'}`)
+    .setDescription(`Gerencie os módulos do bot através das opções abaixo:\n\n**Status Banco:** 🟢 \`Sincronizado (Firebase Firestore)\``)
     .addFields(
       { name: '🎨 Cor do Tema', value: `\`${themeColor}\``, inline: true },
-      { name: '👋 Boas-Vindas & AutoRole', value: `├ Canal: ${db?.welcomeChannel ? `<#${db.welcomeChannel}>` : '`❌ Desativado`'}\n└ Cargo: ${db?.autoRole ? `<@&${db.autoRole}>` : '`❌ Desativado`'}`, inline: true },
-      { name: '🚪 Sistema de Saída', value: `├ Canal: ${db?.leaveChannel ? `<#${db.leaveChannel}>` : '`❌ Desativado`'}\n└ Banner: ${db?.leaveBanner ? '`✅ Configurado`' : '`❌ Sem Banner`'}`, inline: true },
-      { name: '🎟️ Central de Tickets', value: `├ Canal Envio: ${db?.ticketChannel ? `<#${db.ticketChannel}>` : '`❌ Não definido`'}\n├ Categoria: ${db?.ticketCategory ? `<#${db.ticketCategory}>` : '`❌ Não definida`'}\n└ Atendentes: ${db?.ticketSupportRole ? `<@&${db.ticketSupportRole}>` : '`❌ Não definido`'}`, inline: false },
-      { name: '📜 Logs Gerais & Transcrições', value: `└ Canal: ${db?.logChannel ? `<#${db.logChannel}>` : '`❌ Desativado`'}`, inline: false }
+      { name: '👋 Boas-Vindas & AutoRole', value: `├ Canal: ${guildData?.welcomeChannel ? `<#${guildData.welcomeChannel}>` : '`❌ Desativado`'}\n└ Cargo: ${guildData?.autoRole ? `<@&${guildData.autoRole}>` : '`❌ Desativado`'}`, inline: true },
+      { name: '🚪 Sistema de Saída', value: `├ Canal: ${guildData?.leaveChannel ? `<#${guildData.leaveChannel}>` : '`❌ Desativado`'}\n└ Banner: ${guildData?.leaveBanner ? '`✅ Configurado`' : '`❌ Sem Banner`'}`, inline: true },
+      { name: '🎟️ Central de Tickets', value: `├ Canal Envio: ${guildData?.ticketChannel ? `<#${guildData.ticketChannel}>` : '`❌ Não definido`'}\n├ Categoria: ${guildData?.ticketCategory ? `<#${guildData.ticketCategory}>` : '`❌ Não definida`'}\n└ Atendentes: ${guildData?.ticketSupportRole ? `<@&${guildData.ticketSupportRole}>` : '`❌ Não definido`'}`, inline: false },
+      { name: '📜 Logs Gerais & Transcrições', value: `└ Canal: ${guildData?.logChannel ? `<#${guildData.logChannel}>` : '`❌ Desativado`'}`, inline: false }
     )
     .setColor(themeColor)
     .setThumbnail(guild.iconURL({ dynamic: true }) || client.user.displayAvatarURL())
-    .setFooter({ text: `${client.user.username} • Sincronizado com MongoDB Atlas`, iconURL: client.user.displayAvatarURL() })
+    .setFooter({ text: `${client.user.username} • Sincronizado com Firebase Firestore`, iconURL: client.user.displayAvatarURL() })
     .setTimestamp();
 }
 
@@ -196,14 +207,11 @@ function buildPainelButtons() {
 client.on('interactionCreate', async (interaction) => {
   try {
     if (!interaction.guild) return;
-    let db = await getGuildData(interaction.guild.id);
-    if (!db) return interaction.reply({ content: '❌ Erro ao conectar ao MongoDB Atlas.', ephemeral: true });
 
+    // 📌 PROCESSAMENTO DOS COMANDOS SLASH
     if (interaction.isChatInputCommand()) {
-      if (interaction.commandName === 'painel') {
-        return interaction.reply({ embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons(), ephemeral: true });
-      }
 
+      // 1. Comando /cv (Exibe modal sem atraso prévio)
       if (interaction.commandName === 'cv') {
         const modal = new ModalBuilder().setCustomId('modal_cv').setTitle('🎨 Criar Embed Personalizada');
         modal.addComponents(
@@ -215,6 +223,16 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
       }
 
+      // 2. Comando /painel
+      if (interaction.commandName === 'painel') {
+        await interaction.deferReply({ ephemeral: true });
+        let guildData = await getGuildData(interaction.guild.id);
+        if (!guildData) return interaction.editReply({ content: '❌ Erro ao conectar ao Firebase Firestore.' });
+
+        return interaction.editReply({ embeds: [buildPainelEmbed(interaction.guild, guildData)], components: buildPainelButtons() });
+      }
+
+      // 3. Comando /ban
       if (interaction.commandName === 'ban') {
         const targetUser = interaction.options.getUser('usuario');
         const reason = interaction.options.getString('motivo') || 'Nenhum motivo informado.';
@@ -225,8 +243,9 @@ client.on('interactionCreate', async (interaction) => {
 
         await member.ban({ reason: `${reason} \vert{} Por:${interaction.user.tag}` });
 
-        if (db.logChannel) {
-          const logChan = interaction.guild.channels.cache.get(db.logChannel);
+        let guildData = await getGuildData(interaction.guild.id);
+        if (guildData?.logChannel) {
+          const logChan = interaction.guild.channels.cache.get(guildData.logChannel);
           if (logChan) {
             const logEmbed = new EmbedBuilder()
               .setTitle('🔨 Membro Banido')
@@ -244,22 +263,41 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: `✅ **${targetUser.tag}** foi banido com sucesso!` });
       }
 
+      // 4. Comando /lock
       if (interaction.commandName === 'lock') {
-        await interaction.channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: false });
-        return interaction.reply({ content: '🔒 **Canal trancado pela moderação.**' });
+        try {
+          await interaction.channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: false });
+          return interaction.reply({ content: '🔒 **Canal trancado pela moderação.**' });
+        } catch (err) {
+          return interaction.reply({ content: '❌ Falha ao trancar o canal. Verifique se o bot possui a permissão de "Gerenciar Canais".', ephemeral: true });
+        }
       }
 
+      // 5. Comando /unlock
       if (interaction.commandName === 'unlock') {
-        await interaction.channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: true });
-        return interaction.reply({ content: '🔓 **Canal destrancado.**' });
+        try {
+          await interaction.channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: true });
+          return interaction.reply({ content: '🔓 **Canal destrancado.**' });
+        } catch (err) {
+          return interaction.reply({ content: '❌ Falha ao destrancar o canal. Verifique se o bot possui a permissão de "Gerenciar Canais".', ephemeral: true });
+        }
       }
 
+      // 6. Comando /clear
       if (interaction.commandName === 'clear') {
         const amount = interaction.options.getInteger('quantidade');
-        await interaction.channel.bulkDelete(amount, true);
-        return interaction.reply({ content: `🧹 **${amount}** mensagens apagadas.`, ephemeral: true });
+        try {
+          const deleted = await interaction.channel.bulkDelete(amount, true);
+          return interaction.reply({ content: `🧹 **${deleted.size}** mensagens apagadas.`, ephemeral: true });
+        } catch (err) {
+          return interaction.reply({ content: '❌ Falha ao apagar mensagens. Lembre-se de que mensagens com mais de 14 dias não podem ser apagadas em massa.', ephemeral: true });
+        }
       }
     }
+
+    // 📌 PROCESSAMENTO DAS DEMASIADAS INTERAÇÕES (SUBMIT DE MODAIS, BOTÕES E MENUS)
+    let guildData = await getGuildData(interaction.guild.id);
+    if (!guildData) return interaction.reply({ content: '❌ Erro ao conectar ao Firebase Firestore.', ephemeral: true });
 
     if (interaction.isModalSubmit()) {
       if (interaction.customId === 'modal_cv') {
@@ -284,32 +322,30 @@ client.on('interactionCreate', async (interaction) => {
 
       if (interaction.customId === 'modal_edit_welcome') {
         const rawBanner = interaction.fields.getTextInputValue('welcome_banner_url');
-        db.welcomeMessage = interaction.fields.getTextInputValue('welcome_msg_text');
-        db.welcomeBanner = rawBanner && rawBanner.trim() !== '' ? rawBanner.trim() : null;
-        db.markModified('welcomeMessage');
-        db.markModified('welcomeBanner');
-        await db.save();
+        const updated = await updateGuildData(interaction.guild.id, {
+          welcomeMessage: interaction.fields.getTextInputValue('welcome_msg_text'),
+          welcomeBanner: rawBanner && rawBanner.trim() !== '' ? rawBanner.trim() : null
+        });
 
-        return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
+        return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated)], components: buildPainelButtons() });
       }
 
       if (interaction.customId === 'modal_edit_leave') {
         const rawBanner = interaction.fields.getTextInputValue('leave_banner_url');
-        db.leaveMessage = interaction.fields.getTextInputValue('leave_msg_text');
-        db.leaveBanner = rawBanner && rawBanner.trim() !== '' ? rawBanner.trim() : null;
-        db.markModified('leaveMessage');
-        db.markModified('leaveBanner');
-        await db.save();
+        const updated = await updateGuildData(interaction.guild.id, {
+          leaveMessage: interaction.fields.getTextInputValue('leave_msg_text'),
+          leaveBanner: rawBanner && rawBanner.trim() !== '' ? rawBanner.trim() : null
+        });
 
-        return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, db)], components: buildPainelButtons() });
+        return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated)], components: buildPainelButtons() });
       }
     }
 
     if (interaction.isButton()) {
       if (interaction.customId === 'btn_refresh_panel') {
-        const updatedDb = await getGuildData(interaction.guild.id);
-        await interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updatedDb)], components: buildPainelButtons() });
-        return interaction.followUp({ content: '🔄 **Painel sincronizado com o MongoDB Atlas!**', ephemeral: true });
+        const updatedData = await getGuildData(interaction.guild.id);
+        await interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updatedData)], components: buildPainelButtons() });
+        return interaction.followUp({ content: '🔄 **Painel sincronizado com o Firebase Firestore!**', ephemeral: true });
       }
 
       if (interaction.customId === 'btn_welcome') {
@@ -318,7 +354,7 @@ client.on('interactionCreate', async (interaction) => {
         const btnEditMsg = new ButtonBuilder().setCustomId('btn_edit_welcome_msg').setLabel('Editar Mensagem & Banner').setEmoji('✍️').setStyle(ButtonStyle.Secondary);
 
         return interaction.update({
-          embeds: [buildPainelEmbed(interaction.guild, db)],
+          embeds: [buildPainelEmbed(interaction.guild, guildData)],
           components: [
             new ActionRowBuilder().addComponents(channelSelect),
             new ActionRowBuilder().addComponents(roleSelect),
@@ -330,8 +366,8 @@ client.on('interactionCreate', async (interaction) => {
 
       if (interaction.customId === 'btn_edit_welcome_msg') {
         const modal = new ModalBuilder().setCustomId('modal_edit_welcome').setTitle('Configurar Boas-Vindas');
-        const msgInput = new TextInputBuilder().setCustomId('welcome_msg_text').setLabel('Texto ({user} e {server})').setStyle(TextInputStyle.Paragraph).setValue(db.welcomeMessage || '').setRequired(true);
-        const bannerInput = new TextInputBuilder().setCustomId('welcome_banner_url').setLabel('URL da Imagem / Banner (Opcional)').setStyle(TextInputStyle.Short).setValue(db.welcomeBanner || '').setRequired(false);
+        const msgInput = new TextInputBuilder().setCustomId('welcome_msg_text').setLabel('Texto ({user} e {server})').setStyle(TextInputStyle.Paragraph).setValue(guildData.welcomeMessage || '').setRequired(true);
+        const bannerInput = new TextInputBuilder().setCustomId('welcome_banner_url').setLabel('URL da Imagem / Banner (Opcional)').setStyle(TextInputStyle.Short).setValue(guildData.welcomeBanner || '').setRequired(false);
 
         modal.addComponents(new ActionRowBuilder().addComponents(msgInput), new ActionRowBuilder().addComponents(bannerInput));
         return interaction.showModal(modal);
@@ -342,7 +378,7 @@ client.on('interactionCreate', async (interaction) => {
         const btnEditMsg = new ButtonBuilder().setCustomId('btn_edit_leave_msg').setLabel('Editar Mensagem & Banner').setEmoji('✍️').setStyle(ButtonStyle.Secondary);
 
         return interaction.update({
-          embeds: [buildPainelEmbed(interaction.guild, db)],
+          embeds: [buildPainelEmbed(interaction.guild, guildData)],
           components: [
             new ActionRowBuilder().addComponents(channelSelect),
             new ActionRowBuilder().addComponents(btnEditMsg),
@@ -353,8 +389,8 @@ client.on('interactionCreate', async (interaction) => {
 
       if (interaction.customId === 'btn_edit_leave_msg') {
         const modal = new ModalBuilder().setCustomId('modal_edit_leave').setTitle('Configurar Mensagem de Saída');
-        const msgInput = new TextInputBuilder().setCustomId('leave_msg_text').setLabel('Texto ({user} e {server})').setStyle(TextInputStyle.Paragraph).setValue(db.leaveMessage || '').setRequired(true);
-        const bannerInput = new TextInputBuilder().setCustomId('leave_banner_url').setLabel('URL da Imagem / Banner (Opcional)').setStyle(TextInputStyle.Short).setValue(db.leaveBanner || '').setRequired(false);
+        const msgInput = new TextInputBuilder().setCustomId('leave_msg_text').setLabel('Texto ({user} e {server})').setStyle(TextInputStyle.Paragraph).setValue(guildData.leaveMessage || '').setRequired(true);
+        const bannerInput = new TextInputBuilder().setCustomId('leave_banner_url').setLabel('URL da Imagem / Banner (Opcional)').setStyle(TextInputStyle.Short).setValue(guildData.leaveBanner || '').setRequired(false);
 
         modal.addComponents(new ActionRowBuilder().addComponents(msgInput), new ActionRowBuilder().addComponents(bannerInput));
         return interaction.showModal(modal);
@@ -367,7 +403,7 @@ client.on('interactionCreate', async (interaction) => {
         const btnSendTicketPanel = new ButtonBuilder().setCustomId('btn_send_ticket_panel').setLabel('Enviar Painel de Tickets').setEmoji('📩').setStyle(ButtonStyle.Success);
 
         return interaction.update({
-          embeds: [buildPainelEmbed(interaction.guild, db)],
+          embeds: [buildPainelEmbed(interaction.guild, guildData)],
           components: [
             new ActionRowBuilder().addComponents(sendChanSelect),
             new ActionRowBuilder().addComponents(categorySelect),
@@ -379,13 +415,13 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       if (interaction.customId === 'btn_send_ticket_panel') {
-        const targetChan = db.ticketChannel ? interaction.guild.channels.cache.get(db.ticketChannel) : interaction.channel;
+        const targetChan = guildData.ticketChannel ? interaction.guild.channels.cache.get(guildData.ticketChannel) : interaction.channel;
         if (!targetChan) return interaction.reply({ content: '❌ Selecione um canal no menu acima!', ephemeral: true });
 
         const ticketEmbed = new EmbedBuilder()
-          .setTitle(db.ticketTitle || '🎟️ Central de Atendimento & Suporte')
-          .setDescription(db.ticketDescription || 'Clique no botão abaixo para abrir um ticket privado com nossa equipe.')
-          .setColor(db.ticketColor && db.ticketColor.startsWith('#') ? db.ticketColor : '#57F287')
+          .setTitle(guildData.ticketTitle || '🎟️ Central de Atendimento & Suporte')
+          .setDescription(guildData.ticketDescription || 'Clique no botão abaixo para abrir um ticket privado com nossa equipe.')
+          .setColor(guildData.ticketColor && guildData.ticketColor.startsWith('#') ? guildData.ticketColor : '#57F287')
           .setFooter({ text: 'Central de Atendimento' });
 
         const openTicketBtn = new ActionRowBuilder().addComponents(
@@ -397,7 +433,7 @@ client.on('interactionCreate', async (interaction) => {
       }
 
       if (interaction.customId === 'btn_open_ticket') {
-        if (!db.ticketCategory) {
+        if (!guildData.ticketCategory) {
           return interaction.reply({ content: '❌ Categoria de tickets não configurada no `/painel`.', ephemeral: true });
         }
 
@@ -409,7 +445,7 @@ client.on('interactionCreate', async (interaction) => {
         const channel = await interaction.guild.channels.create({
           name: `ticket-${interaction.user.username}`,
           type: ChannelType.GuildText,
-          parent: db.ticketCategory,
+          parent: guildData.ticketCategory,
           permissionOverwrites: [
             { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
             { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] }
@@ -442,8 +478,8 @@ client.on('interactionCreate', async (interaction) => {
           const buffer = Buffer.from(formattedLogs, 'utf-8');
           const attachment = new AttachmentBuilder(buffer, { name: `transcricao-${interaction.channel.name}.txt` });
 
-          if (db.logChannel) {
-            const logChan = interaction.guild.channels.cache.get(db.logChannel);
+          if (guildData.logChannel) {
+            const logChan = interaction.guild.channels.cache.get(guildData.logChannel);
             if (logChan) {
               const logEmbed = new EmbedBuilder()
                 .setTitle('📝 Transcrição de Ticket Encerrado')
@@ -467,7 +503,7 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId === 'btn_logs') {
         const channelSelect = new ChannelSelectMenuBuilder().setCustomId('select_log_channel').setPlaceholder('📜 Selecione o canal de logs gerais').addChannelTypes(ChannelType.GuildText);
         return interaction.update({
-          embeds: [buildPainelEmbed(interaction.guild, db)],
+          embeds: [buildPainelEmbed(interaction.guild, guildData)],
           components: [new ActionRowBuilder().addComponents(channelSelect), ...buildPainelButtons()]
         });
       }
@@ -475,7 +511,7 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId === 'btn_theme') {
         const colorSelect = new StringSelectMenuBuilder().setCustomId('select_theme_color').setPlaceholder('🎨 Selecione a cor do Tema').addOptions(COLOR_OPTIONS);
         return interaction.update({
-          embeds: [buildPainelEmbed(interaction.guild, db)],
+          embeds: [buildPainelEmbed(interaction.guild, guildData)],
           components: [new ActionRowBuilder().addComponents(colorSelect), ...buildPainelButtons()]
         });
       }
@@ -483,31 +519,34 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.isChannelSelectMenu()) {
       const val = interaction.values[0];
-      if (interaction.customId === 'select_welcome_channel') { db.welcomeChannel = val; db.markModified('welcomeChannel'); }
-      if (interaction.customId === 'select_leave_channel') { db.leaveChannel = val; db.markModified('leaveChannel'); }
-      if (interaction.customId === 'select_log_channel') { db.logChannel = val; db.markModified('logChannel'); }
-      if (interaction.customId === 'select_ticket_send_channel') { db.ticketChannel = val; db.markModified('ticketChannel'); }
-      if (interaction.customId === 'select_ticket_category') { db.ticketCategory = val; db.markModified('ticketCategory'); }
+      let updates = {};
+      if (interaction.customId === 'select_welcome_channel') updates.welcomeChannel = val;
+      if (interaction.customId === 'select_leave_channel') updates.leaveChannel = val;
+      if (interaction.customId === 'select_log_channel') updates.logChannel = val;
+      if (interaction.customId === 'select_ticket_send_channel') updates.ticketChannel = val;
+      if (interaction.customId === 'select_ticket_category') updates.ticketCategory = val;
       
-      const savedDb = await db.save();
-      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, savedDb)], components: buildPainelButtons() });
+      const updated = await updateGuildData(interaction.guild.id, updates);
+      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated)], components: buildPainelButtons() });
     }
 
     if (interaction.isRoleSelectMenu()) {
       const val = interaction.values[0];
-      if (interaction.customId === 'select_welcome_role' || interaction.customId === 'select_autorole') { db.autoRole = val; db.markModified('autoRole'); }
-      if (interaction.customId === 'select_ticket_role') { db.ticketSupportRole = val; db.markModified('ticketSupportRole'); }
+      let updates = {};
+      if (interaction.customId === 'select_welcome_role' || interaction.customId === 'select_autorole') updates.autoRole = val;
+      if (interaction.customId === 'select_ticket_role') updates.ticketSupportRole = val;
       
-      const savedDb = await db.save();
-      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, savedDb)], components: buildPainelButtons() });
+      const updated = await updateGuildData(interaction.guild.id, updates);
+      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated)], components: buildPainelButtons() });
     }
 
     if (interaction.isStringSelectMenu()) {
       const val = interaction.values[0];
-      if (interaction.customId === 'select_theme_color') { db.themeColor = val; db.markModified('themeColor'); }
+      let updates = {};
+      if (interaction.customId === 'select_theme_color') updates.themeColor = val;
       
-      const savedDb = await db.save();
-      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, savedDb)], components: buildPainelButtons() });
+      const updated = await updateGuildData(interaction.guild.id, updates);
+      return interaction.update({ embeds: [buildPainelEmbed(interaction.guild, updated)], components: buildPainelButtons() });
     }
 
   } catch (err) {
@@ -516,21 +555,21 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 client.on('guildMemberAdd', async (member) => {
-  const db = await getGuildData(member.guild.id);
-  if (!db) return;
+  const guildData = await getGuildData(member.guild.id);
+  if (!guildData) return;
 
-  if (db.autoRole) {
-    await member.roles.add(db.autoRole).catch(() => {});
+  if (guildData.autoRole) {
+    await member.roles.add(guildData.autoRole).catch(() => {});
   }
 
-  if (db.welcomeChannel) {
-    const channel = member.guild.channels.cache.get(db.welcomeChannel);
+  if (guildData.welcomeChannel) {
+    const channel = member.guild.channels.cache.get(guildData.welcomeChannel);
     if (channel) {
-      const text = (db.welcomeMessage || 'Olá {user}, seja bem-vindo(a) ao **{server}**!')
+      const text = (guildData.welcomeMessage || 'Olá {user}, seja bem-vindo(a) ao **{server}**!')
         .replace(/{user}/g, `${member}`)
         .replace(/{server}/g, member.guild.name);
 
-      const color = db.welcomeColor && db.welcomeColor.startsWith('#') ? db.welcomeColor : (db.themeColor && db.themeColor.startsWith('#') ? db.themeColor : '#57F287');
+      const color = guildData.welcomeColor && guildData.welcomeColor.startsWith('#') ? guildData.welcomeColor : (guildData.themeColor && guildData.themeColor.startsWith('#') ? guildData.themeColor : '#57F287');
 
       const embed = new EmbedBuilder()
         .setTitle('👋 Seja Bem-vindo(a)!')
@@ -539,8 +578,8 @@ client.on('guildMemberAdd', async (member) => {
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
         .setTimestamp();
 
-      if (db.welcomeBanner && (db.welcomeBanner.startsWith('http://') || db.welcomeBanner.startsWith('https://'))) {
-        embed.setImage(db.welcomeBanner);
+      if (guildData.welcomeBanner && (guildData.welcomeBanner.startsWith('http://') || guildData.welcomeBanner.startsWith('https://'))) {
+        embed.setImage(guildData.welcomeBanner);
       }
 
       channel.send({ embeds: [embed] }).catch(() => {});
@@ -549,17 +588,17 @@ client.on('guildMemberAdd', async (member) => {
 });
 
 client.on('guildMemberRemove', async (member) => {
-  const db = await getGuildData(member.guild.id);
-  if (!db) return;
+  const guildData = await getGuildData(member.guild.id);
+  if (!guildData) return;
 
-  if (db.leaveChannel) {
-    const channel = member.guild.channels.cache.get(db.leaveChannel);
+  if (guildData.leaveChannel) {
+    const channel = member.guild.channels.cache.get(guildData.leaveChannel);
     if (channel) {
-      const text = (db.leaveMessage || 'O membro **{user.tag}** saiu do servidor.')
+      const text = (guildData.leaveMessage || 'O membro **{user.tag}** saiu do servidor.')
         .replace(/{user}/g, member.user.tag)
         .replace(/{server}/g, member.guild.name);
 
-      const color = db.leaveColor && db.leaveColor.startsWith('#') ? db.leaveColor : '#ED4245';
+      const color = guildData.leaveColor && guildData.leaveColor.startsWith('#') ? guildData.leaveColor : '#ED4245';
 
       const embed = new EmbedBuilder()
         .setTitle('🚪 Membro Saiu')
@@ -567,8 +606,8 @@ client.on('guildMemberRemove', async (member) => {
         .setColor(color)
         .setTimestamp();
 
-      if (db.leaveBanner && (db.leaveBanner.startsWith('http://') || db.leaveBanner.startsWith('https://'))) {
-        embed.setImage(db.leaveBanner);
+      if (guildData.leaveBanner && (guildData.leaveBanner.startsWith('http://') || guildData.leaveBanner.startsWith('https://'))) {
+        embed.setImage(guildData.leaveBanner);
       }
 
       channel.send({ embeds: [embed] }).catch(() => {});
