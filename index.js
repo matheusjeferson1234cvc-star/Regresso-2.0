@@ -167,24 +167,29 @@ const commands = [
     .addIntegerOption(opt => opt.setName('quantidade').setDescription('Número de mensagens (1 a 100).').setMinValue(1).setMaxValue(100).setRequired(true))
 ];
 
-// EVENTO READY E REGISTRO DE COMANDOS
+// EVENTO READY E REGISTRO REFORÇADO DE COMANDOS
 client.once(Events.ClientReady, async () => {
   console.log(`[SISTEMA] Bot inicializado com sucesso como ${client.user.tag}`);
 
   if (process.env.DISCORD_TOKEN) {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try {
+      // 1. Registra comandos globais
+      await rest.put(
+        Routes.applicationCommands(client.user.id),
+        { body: commands }
+      );
+      console.log('[SLASH] Comandos globais registrados com sucesso!');
+
+      // 2. Sincroniza instantaneamente com os servidores atuais
       const guilds = client.guilds.cache.map(g => g.id);
-      
-      if (guilds.length > 0) {
-        for (const guildId of guilds) {
-          await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body: commands });
-          console.log(`[SLASH] Comandos atualizados INSTANTANEAMENTE no servidor ID: ${guildId}`);
-        }
-      } else {
-        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-        console.log('[SLASH] Comandos globais registrados no Discord.');
+      for (const guildId of guilds) {
+        await rest.put(
+          Routes.applicationGuildCommands(client.user.id, guildId),
+          { body: commands }
+        );
       }
+      console.log('[SLASH] Comandos sincronizados instantaneamente em todas as guildas!');
     } catch (error) {
       console.error('[ERRO REGISTRO SLASH]:', error);
     }
