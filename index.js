@@ -178,18 +178,28 @@ const commands = [
     .addIntegerOption(opt => opt.setName('quantidade').setDescription('Número de mensagens (1 a 100).').setMinValue(1).setMaxValue(100).setRequired(true))
 ];
 
-// EVENTO READY E REGISTRO DE COMANDOS
+// EVENTO READY E REGISTRO INSTANTÂNEO DE COMANDOS
 client.once(Events.ClientReady, async () => {
   console.log(`[SISTEMA] Bot inicializado com sucesso como ${client.user.tag}`);
 
   if (process.env.DISCORD_TOKEN) {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try {
+      // 1. Registra Comandos Globais
       await rest.put(
         Routes.applicationCommands(client.user.id),
         { body: commands }
       );
       console.log('[SLASH] Comandos globais registrados com sucesso!');
+
+      // 2. Registra instantaneamente nas guildas ativas para aparecer imediatamente
+      client.guilds.cache.forEach(async (guild) => {
+        await rest.put(
+          Routes.applicationGuildCommands(client.user.id, guild.id),
+          { body: commands }
+        ).catch(() => null);
+      });
+      console.log('[SLASH] Sincronização instantânea enviada para todos os servidores!');
     } catch (error) {
       console.error('[ERRO REGISTRO SLASH]:', error);
     }
@@ -197,7 +207,7 @@ client.once(Events.ClientReady, async () => {
 });
 
 // ==========================================
-// CONSTRUTORES DE CONTAINER V2 (DESIGN 100% V2)
+// CONSTRUTORES DE CONTAINER V2
 // ==========================================
 
 function gerarPayloadPainelV2(guild, guildData, subModulo = null) {
@@ -228,7 +238,6 @@ function gerarPayloadPainelV2(guild, guildData, subModulo = null) {
 
   containerComponents.push({ type: 14, divider: true, spacing: 1 });
 
-  // Renderiza Sub-módulos dinâmicos dentro da janela principal
   if (subModulo === 'welcome') {
     containerComponents.push(
       { type: 10, content: `### 👋 Configuração de Boas-Vindas & AutoRole\nEscolha os canais e cargo inicial nos seletores abaixo:` },
@@ -344,7 +353,6 @@ function gerarPayloadPainelV2(guild, guildData, subModulo = null) {
     );
   }
 
-  // Linhas Principais de Navegação do Painel
   containerComponents.push(
     {
       type: 1,
@@ -418,7 +426,6 @@ client.on('interactionCreate', async (interaction) => {
   try {
     if (!interaction.guild) return;
 
-    // 📌 PROCESSAMENTO DOS COMANDOS SLASH
     if (interaction.isChatInputCommand()) {
 
       if (interaction.commandName === 'cv') {
@@ -509,7 +516,6 @@ client.on('interactionCreate', async (interaction) => {
       }
     }
 
-    // 📌 PROCESSAMENTO DE MODAIS, BOTÕES E SELETORES
     let guildData = await getGuildData(interaction.guild.id);
 
     if (interaction.isModalSubmit()) {
@@ -749,7 +755,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // ==========================================
-// BOAS-VINDAS E SAÍDA AUTOMÁTICAS (CONTAINERS V2)
+// BOAS-VINDAS E SAÍDA AUTOMÁTICAS
 // ==========================================
 
 client.on('guildMemberAdd', async (member) => {
