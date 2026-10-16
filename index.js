@@ -21,7 +21,6 @@ const {
 } = require('discord.js');
 const admin = require('firebase-admin');
 
-// Flag explícita do Discord para Components V2
 const FLAG_V2 = MessageFlags.IsComponentsV2;
 
 // ==========================================
@@ -31,11 +30,12 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('⚠️ [ANTI-CRASH] Unhandled Rejection:', reason);
 });
 process.on('uncaughtException', (err, origin) => {
-  console.error(`⚠️ [ANTI-CRASH] Uncaught Exception: ${err}\nOrigem: ${origin}`);
+  console.error(`⚠️ [ANTI-CRASH] Uncaught Exception: ${err}\nOrigem:${origin}`);
 });
 
 // 📌 INICIALIZAÇÃO SEGURA DO FIREBASE FIRESTORE
-let db;
+let db = null;
+const memoryCache = new Map();
 
 try {
   const credentialsFileName = process.env.GOOGLE_APPLICATION_CREDENTIALS || 'bot-cets-firebase-adminsdk-fbsvc-94a3a86826.json';
@@ -43,25 +43,21 @@ try {
 
   if (process.env.FIREBASE_CREDENTIALS) {
     const serviceAccount = JSON.parse(process.env.FIREBASE_CREDENTIALS);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
+    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
     console.log('[BANCO] Firebase inicializado via variável FIREBASE_CREDENTIALS!');
   } else if (fs.existsSync(jsonPath)) {
     const serviceAccount = require(jsonPath);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
+    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
     console.log('[BANCO] Firebase inicializado via arquivo de credenciais local!');
   } else {
-    console.error('[BANCO - ALERTA]: Arquivo de credencial do Firebase não foi encontrado e nenhuma variável FIREBASE_CREDENTIALS foi definida.');
+    console.warn('[BANCO - AVISO]: Nenhuma credencial válida do Firebase foi encontrada. O bot funcionará utilizando cache em memória.');
   }
 
   if (admin.apps.length > 0) {
     db = admin.firestore();
   }
 } catch (error) {
-  console.error('[ERRO CRÍTICO FIREBASE]: Não foi possível inicializar o Firebase Admin:', error.message);
+  console.error('[ERRO FIREBASE]: Não foi possível autenticar no Firebase:', error.message);
 }
 
 // Instância do Bot
@@ -75,7 +71,7 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember]
 });
 
-// Configurações padrão do servidor
+// Configurações padrão
 const DEFAULT_GUILD_DATA = {
   themeColor: '#5865F2',
   welcomeActive: false,
@@ -97,7 +93,7 @@ const DEFAULT_GUILD_DATA = {
   invitesChannel: null,
   autoRole: null,
   ticketTitle: '🔱 CETS STORES 🔱',
-  ticketDescription: '🎟️ BOT DE TICKETS — CETUS STORES 🐼\n\n📨 Precisa de ajuda? Abra um ticket e nossa equipe irá te atender!\n\n🛒 • Dúvidas sobre produtos\n💰 • Suporte para compras\n🛠️ • Ajuda e atendimento\n🔒 • Atendimento privado e organizado\n\n⚡ CETUS STORES — Qualidade e confiança em primeiro lugar!',
+  ticketDescription: '🎟️ BOT DE TICKETS — CETUS STORES 🐼\n\n📨 Precisa de ajuda? Abra um ticket e nossa equipe irá te atender!\n\n🛒 • Dúvidas sobre produtos\n💰 • Suporte para compras\n🛠️ • Ajuda e atendimento\n🔒 • Atendimento privado e organizado\n\n⚡ CETUS STORES — Qualidade e confiança em primeira mão!',
   ticketColor: '#5865F2',
   ticketBanner: null,
   ticketFooter: '🤖 Organizações • Roleplay | Desenvolvido por Cetus',
@@ -119,42 +115,53 @@ function isDonoOuAdmin(interaction) {
 }
 
 async function getGuildData(guildId) {
-  try {
-    if (!db) return { guildId, ...DEFAULT_GUILD_DATA };
-    const docRef = db.collection('guilds').doc(guildId);
-    const docSnap = await docRef.get();
-
-    if (!docSnap.exists) {
-      const defaultData = { guildId, ...DEFAULT_GUILD_DATA };
-      await docRef.set(defaultData);
-      return defaultData;
-    }
-
-    const data = docSnap.data();
-    return {
-      ...DEFAULT_GUILD_DATA,
-      ...data,
-      ticketTypes: {
-        ...DEFAULT_GUILD_DATA.ticketTypes,
-        ...(data.ticketTypes || {})
-      }
-    };
-  } catch (error) {
-    console.error('[ERRO FIRESTORE]:', error.message);
-    return { guildId, ...DEFAULT_GUILD_DATA };
+  if (memoryCache.has(guildId)) {
+    return memoryCache.get(guildId);
   }
+
+  let data = { guildId, ...DEFAULT_GUILD_DATA };
+
+  if (db) {
+    try {
+      const docRef = db.collection('guilds').doc(guildId);
+      const docSnap = await docRef.get();
+      if (docSnap.exists) {
+        const fetched = docSnap.data();
+        data = {
+          ...DEFAULT_GUILD_DATA,
+          ...fetched,
+          ticketTypes: {
+            ...DEFAULT_GUILD_DATA.ticketTypes,
+            ...(fetched.ticketTypes || {})
+          }
+        };
+      } else {
+        await docRef.set(data).catch(() => {});
+      }
+    } catch (err) {
+      console.error('[FIRESTORE READ ERR]: Usando fallback em memória:', err.message);
+    }
+  }
+
+  memoryCache.set(guildId, data);
+  return data;
 }
 
 async function updateGuildData(guildId, updates) {
-  try {
-    if (!db) return null;
-    const docRef = db.collection('guilds').doc(guildId);
-    await docRef.set(updates, { merge: true });
-    return await getGuildData(guildId);
-  } catch (error) {
-    console.error('[ERRO ATUALIZAR FIRESTORE]:', error.message);
-    return null;
+  const current = await getGuildData(guildId);
+  const updatedData = { ...current, ...updates };
+  memoryCache.set(guildId, updatedData);
+
+  if (db) {
+    try {
+      const docRef = db.collection('guilds').doc(guildId);
+      await docRef.set(updates, { merge: true });
+    } catch (err) {
+      console.error('[FIRESTORE WRITE ERR]: Atualizado apenas em memória:', err.message);
+    }
   }
+
+  return updatedData;
 }
 
 function parseHexColor(hexStr) {
@@ -164,19 +171,14 @@ function parseHexColor(hexStr) {
   return isNaN(parsed) ? 0x5865F2 : parsed;
 }
 
-// 📌 COMANDOS SLASH OFICIAIS
 const commands = [
-  new SlashCommandBuilder()
-    .setName('boas-vindas')
-    .setDescription('Abre o painel interativo de configurações de boas-vindas, saída e cargos.'),
-  new SlashCommandBuilder()
-    .setName('ticket')
-    .setDescription('Envia o painel oficial de atendimento por tickets.')
+  new SlashCommandBuilder().setName('boas-vindas').setDescription('Abre o painel interativo de configurações de boas-vindas.'),
+  new SlashCommandBuilder().setName('ticket').setDescription('Envia o painel oficial de atendimento por tickets.')
 ];
 
 client.once(Events.ClientReady, async () => {
   console.log('==================================================');
-  console.log(`🤖 BOT ONLINE NA DISCLOUD: ${client.user.tag} (ID: ${client.user.id})`);
+  console.log(`🤖 BOT ONLINE: ${client.user.tag} (ID:${client.user.id})`);
 
   const cleanClientId = process.env.CLIENT_ID ? process.env.CLIENT_ID.trim() : client.user.id;
   const cleanToken = process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.trim() : null;
@@ -185,7 +187,7 @@ client.once(Events.ClientReady, async () => {
     const rest = new REST({ version: '10' }).setToken(cleanToken);
     try {
       await rest.put(Routes.applicationCommands(cleanClientId), { body: commands });
-      console.log('✅ [SLASH] Comandos limpos e registrados com sucesso!');
+      console.log('✅ [SLASH] Comandos atualizados no Discord!');
     } catch (error) {
       console.error('❌ [ERRO REGISTRO SLASH]:', error.message);
     }
@@ -194,7 +196,7 @@ client.once(Events.ClientReady, async () => {
 });
 
 // ==========================================
-// BARRA DE NAVEGAÇÃO
+// BARRA DE NAVEGAÇÃO E PAYLOADS
 // ==========================================
 
 function getWelcomeNavRows(includeHome = true) {
@@ -253,10 +255,10 @@ function gerarPayloadVisaoGeralBoasVindasV2(guildData) {
     `# 👋 Sistema de Boas-Vindas\n\n` +
     `Gerencie mensagens de **entrada, saída, boost e convites** do seu servidor.\n\n` +
     `### 📊 Visão Geral\n` +
-    `👋 **Entrada:** ${wStatus} • ${wChan}\n` +
-    `🚪 **Saída:** ${lStatus} • ${lChan}\n` +
-    `🚀 **Boost:** ${bStatus} • ${bChan}\n` +
-    `🎟️ **Convites:** ${iStatus} • ${iChan}\n\n` +
+    `👋 **Entrada:** ${wStatus} •${wChan}\n` +
+    `🚪 **Saída:** ${lStatus} •${lChan}\n` +
+    `🚀 **Boost:** ${bStatus} •${bChan}\n` +
+    `🎟️ **Convites:** ${iStatus} •${iChan}\n\n` +
     `### 🏷️ Cargos Automáticos\n` +
     `${roleTexto}\n\n` +
     `### 📜 Variáveis Disponíveis\n` +
@@ -267,16 +269,14 @@ function gerarPayloadVisaoGeralBoasVindasV2(guildData) {
     `👑 **Outros:** \`{owner}\` • \`{owner_id}\` • \`{inviter}\` • \`{invite_code}\``;
 
   return {
-    components: [{
-      type: 17,
-      accent_color: parseHexColor(guildData.themeColor),
-      components: [
-        { type: 10, content: textoContent },
-        { type: 14, divider: true, spacing: 1 },
-        ...getWelcomeNavRows(false)
-      ]
-    }],
-    flags: FLAG_V2
+    components: [
+      {
+        type: 1,
+        components: []
+      },
+      ...getWelcomeNavRows(false)
+    ],
+    content: textoContent
   };
 }
 
@@ -298,58 +298,46 @@ function gerarPayloadConfigEntradaV2(guildData) {
     `${roleStr}`;
 
   return {
-    components: [{
-      type: 17,
-      accent_color: parseHexColor(guildData.themeColor),
-      components: [
-        { type: 10, content: textoContent },
-        { type: 14, divider: true, spacing: 1 },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: guildData.welcomeActive ? 4 : 3, custom_id: 'btn_toggle_welcome_active', label: guildData.welcomeActive ? 'Desativar Sistema' : 'Ativar Sistema' }
-          ]
-        },
-        {
-          type: 1,
-          components: [{
-            type: 8,
-            custom_id: 'select_welcome_channel',
-            placeholder: '👋 Selecionar canal de entrada...',
-            channel_types: [ChannelType.GuildText]
-          }]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 1, custom_id: 'btn_edit_welcome_msg', label: 'Editar Mensagem', emoji: { name: '✍️' } }
-          ]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: guildData.welcomeImageActive ? 4 : 3, custom_id: 'btn_toggle_welcome_image', label: guildData.welcomeImageActive ? 'Desativar Imagem' : 'Ativar Imagem', emoji: { name: '🖼️' } }
-          ]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 1, custom_id: 'btn_config_welcome_image', label: 'Configurar Imagens', emoji: { name: '🖼️' } }
-          ]
-        },
-        {
-          type: 1,
-          components: [{
-            type: 6,
-            custom_id: 'select_autorole',
-            placeholder: '🏷️ Selecionar cargos para atribuir na entrada...'
-          }]
-        },
-        { type: 14, divider: true, spacing: 1 },
-        ...getWelcomeNavRows(true)
-      ]
-    }],
-    flags: FLAG_V2
+    content: textoContent,
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: guildData.welcomeActive ? 4 : 3, custom_id: 'btn_toggle_welcome_active', label: guildData.welcomeActive ? 'Desativar Sistema' : 'Ativar Sistema' }
+        ]
+      },
+      {
+        type: 1,
+        components: [{
+          type: 8,
+          custom_id: 'select_welcome_channel',
+          placeholder: '👋 Selecionar canal de entrada...',
+          channel_types: [ChannelType.GuildText]
+        }]
+      },
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 1, custom_id: 'btn_edit_welcome_msg', label: 'Editar Mensagem', emoji: { name: '✍️' } },
+          { type: 2, style: guildData.welcomeImageActive ? 4 : 3, custom_id: 'btn_toggle_welcome_image', label: guildData.welcomeImageActive ? 'Desativar Imagem' : 'Ativar Imagem', emoji: { name: '🖼️' } }
+        ]
+      },
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 1, custom_id: 'btn_config_welcome_image', label: 'Configurar Imagens', emoji: { name: '🖼️' } }
+        ]
+      },
+      {
+        type: 1,
+        components: [{
+          type: 6,
+          custom_id: 'select_autorole',
+          placeholder: '🏷️ Selecionar cargos para atribuir na entrada...'
+        }]
+      },
+      ...getWelcomeNavRows(true)
+    ]
   };
 }
 
@@ -368,50 +356,38 @@ function gerarPayloadConfigSaidaV2(guildData) {
     `**Imagem:** ${imgStr}`;
 
   return {
-    components: [{
-      type: 17,
-      accent_color: parseHexColor(guildData.themeColor),
-      components: [
-        { type: 10, content: textoContent },
-        { type: 14, divider: true, spacing: 1 },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: guildData.leaveActive ? 4 : 3, custom_id: 'btn_toggle_leave_active', label: guildData.leaveActive ? 'Desativar Sistema' : 'Ativar Sistema' }
-          ]
-        },
-        {
-          type: 1,
-          components: [{
-            type: 8,
-            custom_id: 'select_leave_channel',
-            placeholder: '🚪 Selecionar canal de saída...',
-            channel_types: [ChannelType.GuildText]
-          }]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 1, custom_id: 'btn_edit_leave_msg', label: 'Editar Mensagem', emoji: { name: '✍️' } }
-          ]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: guildData.leaveImageActive ? 4 : 3, custom_id: 'btn_toggle_leave_image', label: guildData.leaveImageActive ? 'Desativar Imagem' : 'Ativar Imagem', emoji: { name: '🖼️' } }
-          ]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 1, custom_id: 'btn_config_leave_image', label: 'Configurar Imagens', emoji: { name: '🖼️' } }
-          ]
-        },
-        { type: 14, divider: true, spacing: 1 },
-        ...getWelcomeNavRows(true)
-      ]
-    }],
-    flags: FLAG_V2
+    content: textoContent,
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: guildData.leaveActive ? 4 : 3, custom_id: 'btn_toggle_leave_active', label: guildData.leaveActive ? 'Desativar Sistema' : 'Ativar Sistema' }
+        ]
+      },
+      {
+        type: 1,
+        components: [{
+          type: 8,
+          custom_id: 'select_leave_channel',
+          placeholder: '🚪 Selecionar canal de saída...',
+          channel_types: [ChannelType.GuildText]
+        }]
+      },
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 1, custom_id: 'btn_edit_leave_msg', label: 'Editar Mensagem', emoji: { name: '✍️' } },
+          { type: 2, style: guildData.leaveImageActive ? 4 : 3, custom_id: 'btn_toggle_leave_image', label: guildData.leaveImageActive ? 'Desativar Imagem' : 'Ativar Imagem', emoji: { name: '🖼️' } }
+        ]
+      },
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 1, custom_id: 'btn_config_leave_image', label: 'Configurar Imagens', emoji: { name: '🖼️' } }
+        ]
+      },
+      ...getWelcomeNavRows(true)
+    ]
   };
 }
 
@@ -430,50 +406,38 @@ function gerarPayloadConfigBoostV2(guildData) {
     `**Imagem:** ${imgStr}`;
 
   return {
-    components: [{
-      type: 17,
-      accent_color: parseHexColor(guildData.themeColor),
-      components: [
-        { type: 10, content: textoContent },
-        { type: 14, divider: true, spacing: 1 },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: guildData.boostActive ? 4 : 3, custom_id: 'btn_toggle_boost_active', label: guildData.boostActive ? 'Desativar Sistema' : 'Ativar Sistema' }
-          ]
-        },
-        {
-          type: 1,
-          components: [{
-            type: 8,
-            custom_id: 'select_boost_channel',
-            placeholder: '🚀 Selecionar canal de boost...',
-            channel_types: [ChannelType.GuildText]
-          }]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 1, custom_id: 'btn_edit_boost_msg', label: 'Editar Mensagem', emoji: { name: '✍️' } }
-          ]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: guildData.boostImageActive ? 4 : 3, custom_id: 'btn_toggle_boost_image', label: guildData.boostImageActive ? 'Desativar Imagem' : 'Ativar Imagem', emoji: { name: '🖼️' } }
-          ]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 1, custom_id: 'btn_config_boost_image', label: 'Configurar Imagens', emoji: { name: '🖼️' } }
-          ]
-        },
-        { type: 14, divider: true, spacing: 1 },
-        ...getWelcomeNavRows(true)
-      ]
-    }],
-    flags: FLAG_V2
+    content: textoContent,
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: guildData.boostActive ? 4 : 3, custom_id: 'btn_toggle_boost_active', label: guildData.boostActive ? 'Desativar Sistema' : 'Ativar Sistema' }
+        ]
+      },
+      {
+        type: 1,
+        components: [{
+          type: 8,
+          custom_id: 'select_boost_channel',
+          placeholder: '🚀 Selecionar canal de boost...',
+          channel_types: [ChannelType.GuildText]
+        }]
+      },
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 1, custom_id: 'btn_edit_boost_msg', label: 'Editar Mensagem', emoji: { name: '✍️' } },
+          { type: 2, style: guildData.boostImageActive ? 4 : 3, custom_id: 'btn_toggle_boost_image', label: guildData.boostImageActive ? 'Desativar Imagem' : 'Ativar Imagem', emoji: { name: '🖼️' } }
+        ]
+      },
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 1, custom_id: 'btn_config_boost_image', label: 'Configurar Imagens', emoji: { name: '🖼️' } }
+        ]
+      },
+      ...getWelcomeNavRows(true)
+    ]
   };
 }
 
@@ -491,32 +455,25 @@ function gerarPayloadConfigConvitesV2(guildData) {
     `O sistema tenta identificar qual convite foi utilizado e quem criou o convite.`;
 
   return {
-    components: [{
-      type: 17,
-      accent_color: parseHexColor(guildData.themeColor),
-      components: [
-        { type: 10, content: textoContent },
-        { type: 14, divider: true, spacing: 1 },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: guildData.invitesActive ? 4 : 3, custom_id: 'btn_toggle_invites_active', label: guildData.invitesActive ? 'Desativar Convites' : 'Ativar Convites' }
-          ]
-        },
-        {
-          type: 1,
-          components: [{
-            type: 8,
-            custom_id: 'select_invites_channel',
-            placeholder: '🎟️ Selecionar canal de convites...',
-            channel_types: [ChannelType.GuildText]
-          }]
-        },
-        { type: 14, divider: true, spacing: 1 },
-        ...getWelcomeNavRows(true)
-      ]
-    }],
-    flags: FLAG_V2
+    content: textoContent,
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: guildData.invitesActive ? 4 : 3, custom_id: 'btn_toggle_invites_active', label: guildData.invitesActive ? 'Desativar Convites' : 'Ativar Convites' }
+        ]
+      },
+      {
+        type: 1,
+        components: [{
+          type: 8,
+          custom_id: 'select_invites_channel',
+          placeholder: '🎟️ Selecionar canal de convites...',
+          channel_types: [ChannelType.GuildText]
+        }]
+      },
+      ...getWelcomeNavRows(true)
+    ]
   };
 }
 
@@ -534,30 +491,23 @@ function gerarPayloadGerenciarImagensV2(guildData) {
     `🚀 **Boost:** ${bImg}`;
 
   return {
-    components: [{
-      type: 17,
-      accent_color: parseHexColor(guildData.themeColor),
-      components: [
-        { type: 10, content: textoContent },
-        { type: 14, divider: true, spacing: 1 },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: guildData.welcomeImageActive ? 3 : 4, custom_id: 'btn_toggle_welcome_image', label: guildData.welcomeImageActive ? 'Entrada ON' : 'Entrada OFF', emoji: { name: '👋' } },
-            { type: 2, style: guildData.leaveImageActive ? 3 : 4, custom_id: 'btn_toggle_leave_image', label: guildData.leaveImageActive ? 'Saida ON' : 'Saida OFF', emoji: { name: '🚪' } }
-          ]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: guildData.boostImageActive ? 3 : 4, custom_id: 'btn_toggle_boost_image', label: guildData.boostImageActive ? 'Boost ON' : 'Boost OFF', emoji: { name: '🚀' } }
-          ]
-        },
-        { type: 14, divider: true, spacing: 1 },
-        ...getWelcomeNavRows(true)
-      ]
-    }],
-    flags: FLAG_V2
+    content: textoContent,
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: guildData.welcomeImageActive ? 3 : 4, custom_id: 'btn_toggle_welcome_image', label: guildData.welcomeImageActive ? 'Entrada ON' : 'Entrada OFF', emoji: { name: '👋' } },
+          { type: 2, style: guildData.leaveImageActive ? 3 : 4, custom_id: 'btn_toggle_leave_image', label: guildData.leaveImageActive ? 'Saida ON' : 'Saida OFF', emoji: { name: '🚪' } }
+        ]
+      },
+      {
+        type: 1,
+        components: [
+          { type: 2, style: guildData.boostImageActive ? 3 : 4, custom_id: 'btn_toggle_boost_image', label: guildData.boostImageActive ? 'Boost ON' : 'Boost OFF', emoji: { name: '🚀' } }
+        ]
+      },
+      ...getWelcomeNavRows(true)
+    ]
   };
 }
 
@@ -577,53 +527,46 @@ function gerarPayloadCanaisSistemaV2(guildData) {
     `🎟️ **Convites:** ${iChan}`;
 
   return {
-    components: [{
-      type: 17,
-      accent_color: parseHexColor(guildData.themeColor),
-      components: [
-        { type: 10, content: textoContent },
-        { type: 14, divider: true, spacing: 1 },
-        {
-          type: 1,
-          components: [{
-            type: 8,
-            custom_id: 'select_welcome_channel',
-            placeholder: '👋 Canal de Entrada...',
-            channel_types: [ChannelType.GuildText]
-          }]
-        },
-        {
-          type: 1,
-          components: [{
-            type: 8,
-            custom_id: 'select_leave_channel',
-            placeholder: '🚪 Canal de Saída...',
-            channel_types: [ChannelType.GuildText]
-          }]
-        },
-        {
-          type: 1,
-          components: [{
-            type: 8,
-            custom_id: 'select_boost_channel',
-            placeholder: '🚀 Canal de Boost...',
-            channel_types: [ChannelType.GuildText]
-          }]
-        },
-        {
-          type: 1,
-          components: [{
-            type: 8,
-            custom_id: 'select_invites_channel',
-            placeholder: '🎟️ Canal de Convites...',
-            channel_types: [ChannelType.GuildText]
-          }]
-        },
-        { type: 14, divider: true, spacing: 1 },
-        ...getWelcomeNavRows(true)
-      ]
-    }],
-    flags: FLAG_V2
+    content: textoContent,
+    components: [
+      {
+        type: 1,
+        components: [{
+          type: 8,
+          custom_id: 'select_welcome_channel',
+          placeholder: '👋 Canal de Entrada...',
+          channel_types: [ChannelType.GuildText]
+        }]
+      },
+      {
+        type: 1,
+        components: [{
+          type: 8,
+          custom_id: 'select_leave_channel',
+          placeholder: '🚪 Canal de Saída...',
+          channel_types: [ChannelType.GuildText]
+        }]
+      },
+      {
+        type: 1,
+        components: [{
+          type: 8,
+          custom_id: 'select_boost_channel',
+          placeholder: '🚀 Canal de Boost...',
+          channel_types: [ChannelType.GuildText]
+        }]
+      },
+      {
+        type: 1,
+        components: [{
+          type: 8,
+          custom_id: 'select_invites_channel',
+          placeholder: '🎟️ Canal de Convites...',
+          channel_types: [ChannelType.GuildText]
+        }]
+      },
+      ...getWelcomeNavRows(true)
+    ]
   };
 }
 
@@ -634,54 +577,22 @@ function gerarPayloadCentralTestesV2(guildData) {
     `O teste utiliza **você como membro de teste** e substitui automaticamente as variáveis.`;
 
   return {
-    components: [{
-      type: 17,
-      accent_color: parseHexColor(guildData.themeColor),
-      components: [
-        { type: 10, content: textoContent },
-        { type: 14, divider: true, spacing: 1 },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 3, custom_id: 'btn_testar_entrada', label: 'Testar Entrada', emoji: { name: '👋' } },
-            { type: 2, style: 4, custom_id: 'btn_testar_saida', label: 'Testar Saída', emoji: { name: '🚪' } }
-          ]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 1, custom_id: 'btn_testar_boost', label: 'Testar Boost', emoji: { name: '🚀' } }
-          ]
-        },
-        { type: 14, divider: true, spacing: 1 },
-        ...getWelcomeNavRows(true)
-      ]
-    }],
-    flags: FLAG_V2
+    content: textoContent,
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 3, custom_id: 'btn_testar_entrada', label: 'Testar Entrada', emoji: { name: '👋' } },
+          { type: 2, style: 4, custom_id: 'btn_testar_saida', label: 'Testar Saída', emoji: { name: '🚪' } },
+          { type: 2, style: 1, custom_id: 'btn_testar_boost', label: 'Testar Boost', emoji: { name: '🚀' } }
+        ]
+      },
+      ...getWelcomeNavRows(true)
+    ]
   };
 }
 
-// ==========================================
-// CONFIGURAÇÃO DO SISTEMA DE TICKETS
-// ==========================================
-
 function gerarPayloadPainelTicketPublicoV2(guildData) {
-  const hexColor = parseHexColor(guildData?.ticketColor || guildData?.themeColor);
-
-  const containerComponents = [
-    {
-      type: 10,
-      content: `# ${guildData.ticketTitle || '🔱 CETS STORES 🔱'}\n\n${guildData.ticketDescription}`
-    }
-  ];
-
-  if (guildData.ticketBanner && (guildData.ticketBanner.startsWith('http://') || guildData.ticketBanner.startsWith('https://'))) {
-    containerComponents.push(
-      { type: 14, divider: true, spacing: 1 },
-      { type: 12, items: [{ media: { url: guildData.ticketBanner } }] }
-    );
-  }
-
   const optionsMenu = [];
   const types = guildData.ticketTypes || {};
 
@@ -691,16 +602,12 @@ function gerarPayloadPainelTicketPublicoV2(guildData) {
   if (types.recursos?.active) optionsMenu.push({ label: 'Recursos', description: 'Solicitação de suporte de recursos.', value: 'tipo_recursos', emoji: { name: '🛠️' } });
   if (types.financeiro?.active) optionsMenu.push({ label: 'Financeiro', description: 'Suporte financeiro e compras.', value: 'tipo_financeiro', emoji: { name: '💰' } });
 
-  containerComponents.push(
-    { type: 14, divider: true, spacing: 1 },
-    {
-      type: 10,
-      content: `### 🎟️ Atendimento\nEscolha uma categoria abaixo para iniciar seu atendimento.`
-    }
-  );
+  const textContent = `# ${guildData.ticketTitle || '🔱 CETS STORES 🔱'}\n\n${guildData.ticketDescription}\n\n---\n### 🎟️ Atendimento\nEscolha uma categoria abaixo para iniciar seu atendimento.`;
+
+  const components = [];
 
   if (optionsMenu.length > 0) {
-    containerComponents.push({
+    components.push({
       type: 1,
       components: [{
         type: 3,
@@ -709,49 +616,31 @@ function gerarPayloadPainelTicketPublicoV2(guildData) {
         options: optionsMenu
       }]
     });
-  } else {
-    containerComponents.push({
-      type: 10,
-      content: `*⚠️ Nenhuma categoria de ticket ativada no momento.*`
-    });
   }
 
-  containerComponents.push(
-    {
-      type: 1,
-      components: [
-        { type: 2, style: 2, custom_id: 'btn_config_ticket_main', emoji: { name: '⚙️' } }
-      ]
-    },
-    { type: 14, divider: true, spacing: 1 },
-    { type: 10, content: guildData.ticketFooter || `🤖 Organizações • Roleplay | Desenvolvido por Cetus` }
-  );
+  components.push({
+    type: 1,
+    components: [
+      { type: 2, style: 2, custom_id: 'btn_config_ticket_main', emoji: { name: '⚙️' }, label: 'Configurar' }
+    ]
+  });
 
-  return {
-    components: [{ type: 17, accent_color: hexColor, components: containerComponents }],
-    flags: FLAG_V2
-  };
+  return { content: textContent, components };
 }
 
 function gerarPayloadConfigSistemaTicketsV2() {
   return {
-    components: [{
-      type: 17,
-      accent_color: 0x3498db,
-      components: [
-        { type: 10, content: `# ⚙️ Configuração do Sistema de Tickets\n\nGerencie as configurações do sistema abaixo.` },
-        { type: 14, divider: true, spacing: 1 },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 3, custom_id: 'btn_gerenciar_tipos', label: 'Gerenciar Tipos', emoji: { name: '🎟️' } },
-            { type: 2, style: 2, custom_id: 'btn_canal_transcricao', label: 'Canal Transcrição', emoji: { name: '📜' } },
-            { type: 2, style: 1, custom_id: 'btn_editar_embed_ticket', label: 'Editar Embed', emoji: { name: '📝' } }
-          ]
-        }
-      ]
-    }],
-    flags: FLAG_V2
+    content: `# ⚙️ Configuração do Sistema de Tickets\n\nGerencie as configurações do sistema abaixo.`,
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 3, custom_id: 'btn_gerenciar_tipos', label: 'Gerenciar Tipos', emoji: { name: '🎟️' } },
+          { type: 2, style: 2, custom_id: 'btn_canal_transcricao', label: 'Canal Transcrição', emoji: { name: '📜' } },
+          { type: 2, style: 1, custom_id: 'btn_editar_embed_ticket', label: 'Editar Embed', emoji: { name: '📝' } }
+        ]
+      }
+    ]
   };
 }
 
@@ -759,37 +648,30 @@ function gerarPayloadGerenciarTiposV2(guildData) {
   const t = guildData.ticketTypes || {};
 
   return {
-    components: [{
-      type: 17,
-      accent_color: 0x2ecc71,
-      components: [
-        { type: 10, content: `# 🎟️ Gerenciar Tipos de Ticket\n\nSelecione o tipo que deseja configurar:` },
-        { type: 14, divider: true, spacing: 1 },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 2, custom_id: 'cfgtype_atendimento', label: 'Atendimento', emoji: { name: t.atendimento?.active ? '🟢' : '🔴' } },
-            { type: 2, style: 2, custom_id: 'cfgtype_denuncias', label: 'Denúncias', emoji: { name: t.denuncias?.active ? '🟢' : '🔴' } },
-            { type: 2, style: 2, custom_id: 'cfgtype_recrutamento', label: 'Recrutamento', emoji: { name: t.recrutamento?.active ? '🟢' : '🔴' } }
-          ]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 2, custom_id: 'cfgtype_recursos', label: 'Recursos', emoji: { name: t.recursos?.active ? '🟢' : '🔴' } },
-            { type: 2, style: 2, custom_id: 'cfgtype_financeiro', label: 'Financeiro', emoji: { name: t.financeiro?.active ? '🟢' : '🔴' } }
-          ]
-        },
-        { type: 14, divider: true, spacing: 1 },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 2, custom_id: 'btn_voltar_config_main', label: 'Voltar', emoji: { name: '⬅️' } }
-          ]
-        }
-      ]
-    }],
-    flags: FLAG_V2
+    content: `# 🎟️ Gerenciar Tipos de Ticket\n\nSelecione o tipo que deseja configurar:`,
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 2, custom_id: 'cfgtype_atendimento', label: 'Atendimento', emoji: { name: t.atendimento?.active ? '🟢' : '🔴' } },
+          { type: 2, style: 2, custom_id: 'cfgtype_denuncias', label: 'Denúncias', emoji: { name: t.denuncias?.active ? '🟢' : '🔴' } },
+          { type: 2, style: 2, custom_id: 'cfgtype_recrutamento', label: 'Recrutamento', emoji: { name: t.recrutamento?.active ? '🟢' : '🔴' } }
+        ]
+      },
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 2, custom_id: 'cfgtype_recursos', label: 'Recursos', emoji: { name: t.recursos?.active ? '🟢' : '🔴' } },
+          { type: 2, style: 2, custom_id: 'cfgtype_financeiro', label: 'Financeiro', emoji: { name: t.financeiro?.active ? '🟢' : '🔴' } }
+        ]
+      },
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 2, custom_id: 'btn_voltar_config_main', label: 'Voltar', emoji: { name: '⬅️' } }
+        ]
+      }
+    ]
   };
 }
 
@@ -799,39 +681,32 @@ function gerarPayloadConfigTipoIndividualV2(guildData, typeKey, subAction = null
   const roleTexto = typeObj.role ? `<@&${typeObj.role}>` : '`❌ Não definido`';
   const statusTexto = typeObj.active ? '🟢 Ativo' : '🔴 Inativo';
 
-  const componentsList = [
-    { type: 10, content: `# ⚙️ Configurando ${typeObj.label}\n\n📁 **Categoria**\n${catTexto}\n\n👮 **Cargo suporte**\n${roleTexto}\n\n🔄 **Status**\n${statusTexto}` },
-    { type: 14, divider: true, spacing: 1 }
-  ];
+  const textContent = `# ⚙️ Configurando ${typeObj.label}\n\n📁 **Categoria**\n${catTexto}\n\n👮 **Cargo suporte**\n${roleTexto}\n\n🔄 **Status**\n${statusTexto}`;
+
+  const components = [];
 
   if (subAction === 'select_category') {
-    componentsList.push(
-      {
-        type: 1,
-        components: [{
-          type: 8,
-          custom_id: `savecat_${typeKey}`,
-          placeholder: '📁 Selecionar Categoria',
-          channel_types: [ChannelType.GuildCategory]
-        }]
-      },
-      { type: 14, divider: true, spacing: 1 }
-    );
+    components.push({
+      type: 1,
+      components: [{
+        type: 8,
+        custom_id: `savecat_${typeKey}`,
+        placeholder: '📁 Selecionar Categoria',
+        channel_types: [ChannelType.GuildCategory]
+      }]
+    });
   } else if (subAction === 'select_role') {
-    componentsList.push(
-      {
-        type: 1,
-        components: [{
-          type: 6,
-          custom_id: `saverole_${typeKey}`,
-          placeholder: '👮 Selecionar Cargo Suporte'
-        }]
-      },
-      { type: 14, divider: true, spacing: 1 }
-    );
+    components.push({
+      type: 1,
+      components: [{
+        type: 6,
+        custom_id: `saverole_${typeKey}`,
+        placeholder: '👮 Selecionar Cargo Suporte'
+      }]
+    });
   }
 
-  componentsList.push(
+  components.push(
     {
       type: 1,
       components: [
@@ -842,61 +717,41 @@ function gerarPayloadConfigTipoIndividualV2(guildData, typeKey, subAction = null
     {
       type: 1,
       components: [
-        { type: 2, style: typeObj.active ? 4 : 3, custom_id: `btntoggle_${typeKey}`, label: 'Ativar / Desativar', emoji: { name: '🔄' } }
-      ]
-    },
-    {
-      type: 1,
-      components: [
+        { type: 2, style: typeObj.active ? 4 : 3, custom_id: `btntoggle_${typeKey}`, label: 'Ativar / Desativar', emoji: { name: '🔄' } },
         { type: 2, style: 2, custom_id: 'btn_gerenciar_tipos', label: 'Voltar', emoji: { name: '⬅️' } }
       ]
     }
   );
 
-  return {
-    components: [{ type: 17, accent_color: 0x3498db, components: componentsList }],
-    flags: FLAG_V2
-  };
+  return { content: textContent, components };
 }
 
 function gerarPayloadCanalTranscricaoV2() {
   return {
-    components: [{
-      type: 17,
-      accent_color: 0x9b59b6,
-      components: [
-        { type: 10, content: `# 📜 Selecionar canal de Transcrição\n\nEscolha o canal onde as transcrições de tickets serão salvas:` },
-        { type: 14, divider: true, spacing: 1 },
-        {
-          type: 1,
-          components: [{
-            type: 8,
-            custom_id: 'select_log_channel',
-            placeholder: '📜 Selecionar canal de Transcrição',
-            channel_types: [ChannelType.GuildText]
-          }]
-        }
-      ]
-    }],
-    flags: FLAG_V2
+    content: `# 📜 Selecionar canal de Transcrição\n\nEscolha o canal onde as transcrições de tickets serão salvas:`,
+    components: [
+      {
+        type: 1,
+        components: [{
+          type: 8,
+          custom_id: 'select_log_channel',
+          placeholder: '📜 Selecionar canal de Transcrição',
+          channel_types: [ChannelType.GuildText]
+        }]
+      }
+    ]
   };
 }
 
-function gerarPayloadAvisoV2(titulo, mensagem, corHex = 0xe74c3c) {
+function gerarPayloadAvisoV2(titulo, mensagem) {
   return {
-    components: [{
-      type: 17,
-      accent_color: corHex,
-      components: [
-        { type: 10, content: `# ${titulo}\n\n${mensagem}` }
-      ]
-    }],
-    flags: FLAG_V2
+    content: `# ${titulo}\n\n${mensagem}`,
+    components: []
   };
 }
 
 // ==========================================
-// INTERAÇÕES E PROCESSAMENTO
+// INTERAÇÕES E PROCESSAMENTO DE EVENTOS
 // ==========================================
 
 client.on('interactionCreate', async (interaction) => {
@@ -920,13 +775,12 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         let guildData = await getGuildData(interaction.guild.id);
         await interaction.channel.send(gerarPayloadPainelTicketPublicoV2(guildData));
-        return interaction.editReply(gerarPayloadAvisoV2('✅ Painel Enviado', 'Painel oficial de atendimento enviado no canal!', 0x2ecc71));
+        return interaction.editReply(gerarPayloadAvisoV2('✅ Painel Enviado', 'Painel oficial de atendimento enviado no canal!'));
       }
     }
 
     let guildData = await getGuildData(interaction.guild.id);
 
-    // 📌 MODAIS
     if (interaction.isModalSubmit()) {
       if (interaction.customId === 'modal_edit_welcome') {
         const updated = await updateGuildData(interaction.guild.id, { welcomeMessage: interaction.fields.getTextInputValue('welcome_msg_text') });
@@ -974,11 +828,10 @@ client.on('interactionCreate', async (interaction) => {
           await interaction.message.edit(gerarPayloadPainelTicketPublicoV2(updated || guildData));
         } catch (e) {}
 
-        return interaction.reply({ ...gerarPayloadAvisoV2('✅ Painel Atualizado', 'As alterações do painel de ticket foram salvas com sucesso!', 0x2ecc71), flags: MessageFlags.Ephemeral });
+        return interaction.reply({ ...gerarPayloadAvisoV2('✅ Painel Atualizado', 'As alterações do painel de ticket foram salvas com sucesso!'), flags: MessageFlags.Ephemeral });
       }
     }
 
-    // 📌 BOTÕES DE NAVEGAÇÃO
     if (interaction.isButton()) {
       const cid = interaction.customId;
 
@@ -1124,20 +977,20 @@ client.on('interactionCreate', async (interaction) => {
 
       if (cid === 'btn_testar_entrada') {
         client.emit('guildMemberAdd', interaction.member);
-        return interaction.reply({ ...gerarPayloadAvisoV2('🧪 Teste Disparado', 'Mensagem de entrada simulada com sucesso!', 0x2ecc71), flags: MessageFlags.Ephemeral });
+        return interaction.reply({ ...gerarPayloadAvisoV2('🧪 Teste Disparado', 'Mensagem de entrada simulada com sucesso!'), flags: MessageFlags.Ephemeral });
       }
 
       if (cid === 'btn_testar_saida') {
         client.emit('guildMemberRemove', interaction.member);
-        return interaction.reply({ ...gerarPayloadAvisoV2('🧪 Teste Disparado', 'Mensagem de saída simulada com sucesso!', 0xed4245), flags: MessageFlags.Ephemeral });
+        return interaction.reply({ ...gerarPayloadAvisoV2('🧪 Teste Disparado', 'Mensagem de saída simulada com sucesso!'), flags: MessageFlags.Ephemeral });
       }
 
       if (cid === 'btn_testar_boost') {
-        return interaction.reply({ ...gerarPayloadAvisoV2('🧪 Teste Disparado', 'Mensagem de boost simulada com sucesso!', 0x5865f2), flags: MessageFlags.Ephemeral });
+        return interaction.reply({ ...gerarPayloadAvisoV2('🧪 Teste Disparado', 'Mensagem de boost simulada com sucesso!'), flags: MessageFlags.Ephemeral });
       }
 
       if (cid === 'btn_close_ticket') {
-        await interaction.reply({ ...gerarPayloadAvisoV2('🔒 Encerrando Ticket', 'Gerando transcrição e excluindo o canal em 5 segundos...', 0xe67e22) });
+        await interaction.reply({ ...gerarPayloadAvisoV2('🔒 Encerrando Ticket', 'Gerando transcrição e excluindo o canal em 5 segundos...') });
 
         try {
           const fetchedMessages = await interaction.channel.messages.fetch({ limit: 100 });
@@ -1153,14 +1006,7 @@ client.on('interactionCreate', async (interaction) => {
             const logChan = interaction.guild.channels.cache.get(guildData.logChannel);
             if (logChan) {
               const payloadLog = {
-                components: [{
-                  type: 17,
-                  accent_color: 0xfee75c,
-                  components: [
-                    { type: 10, content: `# 📝 Transcrição de Ticket Encerrado\n\n📁 **Canal:** \`${interaction.channel.name}\`\n👤 **Encerrado Por:** ${interaction.user}` }
-                  ]
-                }],
-                flags: FLAG_V2
+                content: `# 📝 Transcrição de Ticket Encerrado\n\n📁 **Canal:** \`${interaction.channel.name}\`\n👤 **Encerrado Por:** ${interaction.user}`
               };
 
               await logChan.send({ ...payloadLog, files: [attachment] }).catch(() => {});
@@ -1174,7 +1020,6 @@ client.on('interactionCreate', async (interaction) => {
       }
     }
 
-    // 📌 SELETORES DE STRING (CATEGORIA TICKET PÚBLICO)
     if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'select_categoria_ticket_publico') {
         const val = interaction.values[0];
@@ -1190,7 +1035,7 @@ client.on('interactionCreate', async (interaction) => {
 
         const existingChannel = interaction.guild.channels.cache.find(c => c.name === channelName);
         if (existingChannel) {
-          return interaction.reply({ ...gerarPayloadAvisoV2('⚠️ Ticket Já Existente', `Você já possui um ticket aberto em ${existingChannel}!`, 0xf1c40f), flags: MessageFlags.Ephemeral });
+          return interaction.reply({ ...gerarPayloadAvisoV2('⚠️ Ticket Já Existente', `Você já possui um ticket aberto em ${existingChannel}!`), flags: MessageFlags.Ephemeral });
         }
 
         const permissionOverwrites = [
@@ -1213,29 +1058,22 @@ client.on('interactionCreate', async (interaction) => {
         });
 
         const payloadTicketTicket = {
-          components: [{
-            type: 17,
-            accent_color: 0x3498db,
-            components: [
-              { type: 10, content: `# 🎟️ Ticket de ${interaction.user.username}\n\n📌 **Categoria:** \`${typeObj.label}\`\n👋 Olá ${interaction.user}, descreva sua solicitação no chat. Nossa equipe irá te atender em breve!` },
-              { type: 14, divider: true, spacing: 1 },
-              {
-                type: 1,
-                components: [
-                  { type: 2, style: 4, custom_id: 'btn_close_ticket', label: 'Fechar & Gerar Transcrição', emoji: { name: '🔒' } }
-                ]
-              }
-            ]
-          }],
-          flags: FLAG_V2
+          content: `# 🎟️ Ticket de ${interaction.user.username}\n\n📌 **Categoria:** \`${typeObj.label}\`\n👋 Olá ${interaction.user}, descreva sua solicitação no chat. Nossa equipe irá te atender em breve!`,
+          components: [
+            {
+              type: 1,
+              components: [
+                { type: 2, style: 4, custom_id: 'btn_close_ticket', label: 'Fechar & Gerar Transcrição', emoji: { name: '🔒' } }
+              ]
+            }
+          ]
         };
 
         await channel.send(payloadTicketTicket);
-        return interaction.reply({ ...gerarPayloadAvisoV2('✅ Ticket Criado', `Seu ticket de **${typeObj.label}** foi aberto em ${channel}`, 0x2ecc71), flags: MessageFlags.Ephemeral });
+        return interaction.reply({ ...gerarPayloadAvisoV2('✅ Ticket Criado', `Seu ticket de **${typeObj.label}** foi aberto em ${channel}`), flags: MessageFlags.Ephemeral });
       }
     }
 
-    // 📌 SELETORES DE CANAL E CARGO
     if (interaction.isChannelSelectMenu()) {
       const val = interaction.values[0];
       const cid = interaction.customId;
@@ -1277,7 +1115,7 @@ client.on('interactionCreate', async (interaction) => {
 
       if (cid === 'select_log_channel') {
         await updateGuildData(interaction.guild.id, { logChannel: val });
-        return interaction.reply({ ...gerarPayloadAvisoV2('✅ Canal Salvo', `Canal de Transcrição/Logs definido para <#${val}>!`, 0x2ecc71), flags: MessageFlags.Ephemeral });
+        return interaction.reply({ ...gerarPayloadAvisoV2('✅ Canal Salvo', `Canal de Transcrição/Logs definido para <#${val}>!`), flags: MessageFlags.Ephemeral });
       }
     }
 
@@ -1312,7 +1150,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // ==========================================
-// EVENTOS AUTOMÁTICOS
+// MENSAGENS AUTOMÁTICAS
 // ==========================================
 
 function formatVariables(text, member, guild) {
@@ -1351,23 +1189,7 @@ client.on('guildMemberAdd', async (member) => {
     const channel = member.guild.channels.cache.get(guildData.welcomeChannel);
     if (channel) {
       const text = formatVariables(guildData.welcomeMessage, member, member.guild);
-      const color = parseHexColor(guildData.themeColor);
-
-      const containerComp = [
-        { type: 10, content: `# 👋 Seja Bem-vindo(a)!\n\n${text}` }
-      ];
-
-      if (guildData.welcomeImageActive && guildData.welcomeBanner && (guildData.welcomeBanner.startsWith('http://') || guildData.welcomeBanner.startsWith('https://'))) {
-        containerComp.push(
-          { type: 14, divider: true, spacing: 1 },
-          { type: 12, items: [{ media: { url: guildData.welcomeBanner } }] }
-        );
-      }
-
-      channel.send({
-        components: [{ type: 17, accent_color: color, components: containerComp }],
-        flags: FLAG_V2
-      }).catch(() => {});
+      channel.send({ content: `# 👋 Seja Bem-vindo(a)!\n\n${text}` }).catch(() => {});
     }
   }
 });
@@ -1379,23 +1201,7 @@ client.on('guildMemberRemove', async (member) => {
   const channel = member.guild.channels.cache.get(guildData.leaveChannel);
   if (channel) {
     const text = formatVariables(guildData.leaveMessage, member, member.guild);
-    const color = parseHexColor('#ED4245');
-
-    const containerComp = [
-      { type: 10, content: `# 🚪 Membro Saiu\n\n${text}` }
-    ];
-
-    if (guildData.leaveImageActive && guildData.leaveBanner && (guildData.leaveBanner.startsWith('http://') || guildData.leaveBanner.startsWith('https://'))) {
-      containerComp.push(
-        { type: 14, divider: true, spacing: 1 },
-        { type: 12, items: [{ media: { url: guildData.leaveBanner } }] }
-      );
-    }
-
-    channel.send({
-      components: [{ type: 17, accent_color: color, components: containerComp }],
-      flags: FLAG_V2
-    }).catch(() => {});
+    channel.send({ content: `# 🚪 Membro Saiu\n\n${text}` }).catch(() => {});
   }
 });
 
