@@ -147,7 +147,7 @@ const COLOR_OPTIONS = [
   { label: 'Dark / Escuro', description: 'Tom escuro', value: '#2F3136' }
 ];
 
-// LISTA COMPLETA DE COMANDOS SLASH
+// LISTA COMPLETA DE COMANDOS SLASH UNIFICADA
 const commands = [
   new SlashCommandBuilder()
     .setName('painel')
@@ -178,30 +178,23 @@ const commands = [
     .addIntegerOption(opt => opt.setName('quantidade').setDescription('Número de mensagens (1 a 100).').setMinValue(1).setMaxValue(100).setRequired(true))
 ];
 
-// EVENTO READY E REGISTRO INSTANTÂNEO DE COMANDOS
+// EVENTO READY E REGISTRO DE COMANDOS
 client.once(Events.ClientReady, async () => {
   console.log(`[SISTEMA] Bot inicializado com sucesso como ${client.user.tag}`);
 
-  if (process.env.DISCORD_TOKEN) {
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+  const cleanClientId = process.env.CLIENT_ID || client.user.id;
+  const cleanToken = process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.trim() : null;
+
+  if (cleanToken) {
+    const rest = new REST({ version: '10' }).setToken(cleanToken);
     try {
-      // 1. Registra Comandos Globais
       await rest.put(
-        Routes.applicationCommands(client.user.id),
+        Routes.applicationCommands(cleanClientId),
         { body: commands }
       );
-      console.log('[SLASH] Comandos globais registrados com sucesso!');
-
-      // 2. Registra instantaneamente nas guildas ativas para aparecer imediatamente
-      client.guilds.cache.forEach(async (guild) => {
-        await rest.put(
-          Routes.applicationGuildCommands(client.user.id, guild.id),
-          { body: commands }
-        ).catch(() => null);
-      });
-      console.log('[SLASH] Sincronização instantânea enviada para todos os servidores!');
+      console.log('✅ [SLASH] Comandos globais registrados com sucesso no Discord!');
     } catch (error) {
-      console.error('[ERRO REGISTRO SLASH]:', error);
+      console.error('❌ [ERRO REGISTRO SLASH]:', error.message);
     }
   }
 });
