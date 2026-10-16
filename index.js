@@ -41,20 +41,25 @@ try {
   const credentialsFileName = process.env.GOOGLE_APPLICATION_CREDENTIALS || 'bot-cets-firebase-adminsdk-fbsvc-94a3a86826.json';
   const jsonPath = path.resolve(process.cwd(), credentialsFileName);
 
-  if (fs.existsSync(jsonPath)) {
+  if (process.env.FIREBASE_CREDENTIALS) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_CREDENTIALS);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    console.log('[BANCO] Firebase inicializado via variável FIREBASE_CREDENTIALS!');
+  } else if (fs.existsSync(jsonPath)) {
     const serviceAccount = require(jsonPath);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
-    console.log('[BANCO] Firebase Admin inicializado com sucesso via arquivo de credenciais!');
+    console.log('[BANCO] Firebase inicializado via arquivo de credenciais local!');
   } else {
-    admin.initializeApp({
-      credential: admin.credential.applicationDefault()
-    });
-    console.log('[BANCO] Firebase Admin inicializado com sucesso via Application Default!');
+    console.error('[BANCO - ALERTA]: Arquivo de credencial do Firebase não foi encontrado e nenhuma variável FIREBASE_CREDENTIALS foi definida.');
   }
 
-  db = admin.firestore();
+  if (admin.apps.length > 0) {
+    db = admin.firestore();
+  }
 } catch (error) {
   console.error('[ERRO CRÍTICO FIREBASE]: Não foi possível inicializar o Firebase Admin:', error.message);
 }
