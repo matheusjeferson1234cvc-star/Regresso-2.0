@@ -1,5 +1,5 @@
 require('dotenv').config();
-const path = require('path');
+const path = path = require('path');
 const fs = require('fs');
 
 const {
@@ -31,7 +31,7 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('⚠️ [ANTI-CRASH] Unhandled Rejection:', reason);
 });
 process.on('uncaughtException', (err, origin) => {
-  console.error(`⚠️ [ANTI-CRASH] Uncaught Exception: ${err}\nOrigem:${origin}`);
+  console.error(`⚠️ [ANTI-CRASH] Uncaught Exception: ${err}\nOrigem: ${origin}`);
 });
 
 // 📌 INICIALIZAÇÃO SEGURA DO FIREBASE FIRESTORE
@@ -159,7 +159,7 @@ function parseHexColor(hexStr) {
   return isNaN(parsed) ? 0x5865F2 : parsed;
 }
 
-// 📌 APENAS OS COMANDOS OFICIAIS ATIVOS (SEM DUPLICADOS)
+// 📌 COMANDOS SLASH OFICIAIS
 const commands = [
   new SlashCommandBuilder()
     .setName('boas-vindas')
@@ -171,7 +171,68 @@ const commands = [
 
 client.once(Events.ClientReady, async () => {
   console.log('==================================================');
-  console.log(`🤖 BOT ONLINE NA DISCLOUD: ${client.user.tag} (ID: ${client.user.id})`);  const cleanClientId = process.env.CLIENT_ID ? process.env.CLIENT_ID.trim() : client.user.id; const cleanToken = process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.trim() : null;  if (cleanToken) { const rest = new REST({ version: '10' }).setToken(cleanToken); try { await rest.put(Routes.applicationCommands(cleanClientId), { body: commands }); console.log('✅ [SLASH] Comandos limpos e atualizados com sucesso (sem duplicados)!'); } catch (error) { console.error('❌ [ERRO REGISTRO SLASH]:', error.message); } } console.log('=================================================='); });  // ========================================== // BARRA DE NAVEGAÇÃO ORGANIZADA // ==========================================  function getWelcomeNavRows(includeHome = true) { const row1 = { type: 1, components: [] };  if (includeHome) { row1.components.push({ type: 2, style: 1, custom_id: 'btn_nav_menu_main', label: 'Menu', emoji: { name: '🏠' } }); }  row1.components.push( { type: 2, style: 2, custom_id: 'btn_nav_entrada', label: 'Entrada', emoji: { name: '👋' } }, { type: 2, style: 2, custom_id: 'btn_nav_saida', label: 'Saída', emoji: { name: '🚪' } } );  const row2 = { type: 1, components: [ { type: 2, style: 2, custom_id: 'btn_nav_boost', label: 'Boost', emoji: { name: '🚀' } }, { type: 2, style: 2, custom_id: 'btn_nav_convites', label: 'Convites', emoji: { name: '🎟️' } } ] };  const row3 = { type: 1, components: [ { type: 2, style: 2, custom_id: 'btn_nav_imagens', label: 'Imagens', emoji: { name: '🖼️' } }, { type: 2, style: 2, custom_id: 'btn_nav_canais', label: 'Canais', emoji: { name: '📢' } } ] };  const row4 = { type: 1, components: [ { type: 2, style: 2, custom_id: 'btn_nav_testar', label: 'Testar', emoji: { name: '🧪' } }, { type: 2, style: 2, custom_id: 'btn_nav_restaurar', label: 'Restaurar', emoji: { name: '🔄' } } ] };  return [row1, row2, row3, row4]; }  function gerarPayloadVisaoGeralBoasVindasV2(guildData) { const wChan = guildData.welcomeChannel ? `<#${guildData.welcomeChannel}>` : '`Não configurado`';
+  console.log(`🤖 BOT ONLINE NA DISCLOUD: ${client.user.tag} (ID: ${client.user.id})`);
+
+  const cleanClientId = process.env.CLIENT_ID ? process.env.CLIENT_ID.trim() : client.user.id;
+  const cleanToken = process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.trim() : null;
+
+  if (cleanToken) {
+    const rest = new REST({ version: '10' }).setToken(cleanToken);
+    try {
+      await rest.put(Routes.applicationCommands(cleanClientId), { body: commands });
+      console.log('✅ [SLASH] Comandos limpos e registrados com sucesso!');
+    } catch (error) {
+      console.error('❌ [ERRO REGISTRO SLASH]:', error.message);
+    }
+  }
+  console.log('==================================================');
+});
+
+// ==========================================
+// BARRA DE NAVEGAÇÃO
+// ==========================================
+
+function getWelcomeNavRows(includeHome = true) {
+  const row1 = { type: 1, components: [] };
+
+  if (includeHome) {
+    row1.components.push({ type: 2, style: 1, custom_id: 'btn_nav_menu_main', label: 'Menu', emoji: { name: '🏠' } });
+  }
+
+  row1.components.push(
+    { type: 2, style: 2, custom_id: 'btn_nav_entrada', label: 'Entrada', emoji: { name: '👋' } },
+    { type: 2, style: 2, custom_id: 'btn_nav_saida', label: 'Saída', emoji: { name: '🚪' } }
+  );
+
+  const row2 = {
+    type: 1,
+    components: [
+      { type: 2, style: 2, custom_id: 'btn_nav_boost', label: 'Boost', emoji: { name: '🚀' } },
+      { type: 2, style: 2, custom_id: 'btn_nav_convites', label: 'Convites', emoji: { name: '🎟️' } }
+    ]
+  };
+
+  const row3 = {
+    type: 1,
+    components: [
+      { type: 2, style: 2, custom_id: 'btn_nav_imagens', label: 'Imagens', emoji: { name: '🖼️' } },
+      { type: 2, style: 2, custom_id: 'btn_nav_canais', label: 'Canais', emoji: { name: '📢' } }
+    ]
+  };
+
+  const row4 = {
+    type: 1,
+    components: [
+      { type: 2, style: 2, custom_id: 'btn_nav_testar', label: 'Testar', emoji: { name: '🧪' } },
+      { type: 2, style: 2, custom_id: 'btn_nav_restaurar', label: 'Restaurar', emoji: { name: '🔄' } }
+    ]
+  };
+
+  return [row1, row2, row3, row4];
+}
+
+function gerarPayloadVisaoGeralBoasVindasV2(guildData) {
+  const wChan = guildData.welcomeChannel ? `<#${guildData.welcomeChannel}>` : '`Não configurado`';
   const lChan = guildData.leaveChannel ? `<#${guildData.leaveChannel}>` : '`Não configurado`';
   const bChan = guildData.boostChannel ? `<#${guildData.boostChannel}>` : '`Não configurado`';
   const iChan = guildData.invitesChannel ? `<#${guildData.invitesChannel}>` : '`Não configurado`';
@@ -187,10 +248,10 @@ client.once(Events.ClientReady, async () => {
     `# 👋 Sistema de Boas-Vindas\n\n` +
     `Gerencie mensagens de **entrada, saída, boost e convites** do seu servidor.\n\n` +
     `### 📊 Visão Geral\n` +
-    `👋 **Entrada:** ${wStatus} •${wChan}\n` +
-    `🚪 **Saída:** ${lStatus} •${lChan}\n` +
-    `🚀 **Boost:** ${bStatus} •${bChan}\n` +
-    `🎟️ **Convites:** ${iStatus} •${iChan}\n\n` +
+    `👋 **Entrada:** ${wStatus} • ${wChan}\n` +
+    `🚪 **Saída:** ${lStatus} • ${lChan}\n` +
+    `🚀 **Boost:** ${bStatus} • ${bChan}\n` +
+    `🎟️ **Convites:** ${iStatus} • ${iChan}\n\n` +
     `### 🏷️ Cargos Automáticos\n` +
     `${roleTexto}\n\n` +
     `### 📜 Variáveis Disponíveis\n` +
@@ -595,6 +656,10 @@ function gerarPayloadCentralTestesV2(guildData) {
   };
 }
 
+// ==========================================
+// CONFIGURAÇÃO DO SISTEMA DE TICKETS
+// ==========================================
+
 function gerarPayloadPainelTicketPublicoV2(guildData) {
   const hexColor = parseHexColor(guildData?.ticketColor || guildData?.themeColor);
 
@@ -663,6 +728,155 @@ function gerarPayloadPainelTicketPublicoV2(guildData) {
   };
 }
 
+function gerarPayloadConfigSistemaTicketsV2() {
+  return {
+    components: [{
+      type: 17,
+      accent_color: 0x3498db,
+      components: [
+        { type: 10, content: `# ⚙️ Configuração do Sistema de Tickets\n\nGerencie as configurações do sistema abaixo.` },
+        { type: 14, divider: true, spacing: 1 },
+        {
+          type: 1,
+          components: [
+            { type: 2, style: 3, custom_id: 'btn_gerenciar_tipos', label: 'Gerenciar Tipos', emoji: { name: '🎟️' } },
+            { type: 2, style: 2, custom_id: 'btn_canal_transcricao', label: 'Canal Transcrição', emoji: { name: '📜' } },
+            { type: 2, style: 1, custom_id: 'btn_editar_embed_ticket', label: 'Editar Embed', emoji: { name: '📝' } }
+          ]
+        }
+      ]
+    }],
+    flags: FLAG_V2
+  };
+}
+
+function gerarPayloadGerenciarTiposV2(guildData) {
+  const t = guildData.ticketTypes || {};
+
+  return {
+    components: [{
+      type: 17,
+      accent_color: 0x2ecc71,
+      components: [
+        { type: 10, content: `# 🎟️ Gerenciar Tipos de Ticket\n\nSelecione o tipo que deseja configurar:` },
+        { type: 14, divider: true, spacing: 1 },
+        {
+          type: 1,
+          components: [
+            { type: 2, style: 2, custom_id: 'cfgtype_atendimento', label: 'Atendimento', emoji: { name: t.atendimento?.active ? '🟢' : '🔴' } },
+            { type: 2, style: 2, custom_id: 'cfgtype_denuncias', label: 'Denúncias', emoji: { name: t.denuncias?.active ? '🟢' : '🔴' } },
+            { type: 2, style: 2, custom_id: 'cfgtype_recrutamento', label: 'Recrutamento', emoji: { name: t.recrutamento?.active ? '🟢' : '🔴' } }
+          ]
+        },
+        {
+          type: 1,
+          components: [
+            { type: 2, style: 2, custom_id: 'cfgtype_recursos', label: 'Recursos', emoji: { name: t.recursos?.active ? '🟢' : '🔴' } },
+            { type: 2, style: 2, custom_id: 'cfgtype_financeiro', label: 'Financeiro', emoji: { name: t.financeiro?.active ? '🟢' : '🔴' } }
+          ]
+        },
+        { type: 14, divider: true, spacing: 1 },
+        {
+          type: 1,
+          components: [
+            { type: 2, style: 2, custom_id: 'btn_voltar_config_main', label: 'Voltar', emoji: { name: '⬅️' } }
+          ]
+        }
+      ]
+    }],
+    flags: FLAG_V2
+  };
+}
+
+function gerarPayloadConfigTipoIndividualV2(guildData, typeKey, subAction = null) {
+  const typeObj = guildData.ticketTypes?.[typeKey] || { active: false, category: null, role: null, label: typeKey };
+  const catTexto = typeObj.category ? `<#${typeObj.category}>` : '`❌ Não definida`';
+  const roleTexto = typeObj.role ? `<@&${typeObj.role}>` : '`❌ Não definido`';
+  const statusTexto = typeObj.active ? '🟢 Ativo' : '🔴 Inativo';
+
+  const componentsList = [
+    { type: 10, content: `# ⚙️ Configurando ${typeObj.label}\n\n📁 **Categoria**\n${catTexto}\n\n👮 **Cargo suporte**\n${roleTexto}\n\n🔄 **Status**\n${statusTexto}` },
+    { type: 14, divider: true, spacing: 1 }
+  ];
+
+  if (subAction === 'select_category') {
+    componentsList.push(
+      {
+        type: 1,
+        components: [{
+          type: 8,
+          custom_id: `savecat_${typeKey}`,
+          placeholder: '📁 Selecionar Categoria',
+          channel_types: [ChannelType.GuildCategory]
+        }]
+      },
+      { type: 14, divider: true, spacing: 1 }
+    );
+  } else if (subAction === 'select_role') {
+    componentsList.push(
+      {
+        type: 1,
+        components: [{
+          type: 6,
+          custom_id: `saverole_${typeKey}`,
+          placeholder: '👮 Selecionar Cargo Suporte'
+        }]
+      },
+      { type: 14, divider: true, spacing: 1 }
+    );
+  }
+
+  componentsList.push(
+    {
+      type: 1,
+      components: [
+        { type: 2, style: 2, custom_id: `btncat_${typeKey}`, label: 'Categoria', emoji: { name: '📁' } },
+        { type: 2, style: 2, custom_id: `btnrole_${typeKey}`, label: 'Cargo', emoji: { name: '👮' } }
+      ]
+    },
+    {
+      type: 1,
+      components: [
+        { type: 2, style: typeObj.active ? 4 : 3, custom_id: `btntoggle_${typeKey}`, label: 'Ativar / Desativar', emoji: { name: '🔄' } }
+      ]
+    },
+    {
+      type: 1,
+      components: [
+        { type: 2, style: 2, custom_id: 'btn_gerenciar_tipos', label: 'Voltar', emoji: { name: '⬅️' } }
+      ]
+    }
+  );
+
+  return {
+    components: [{ type: 17, accent_color: 0x3498db, components: componentsList }],
+    flags: FLAG_V2
+  };
+}
+
+function gerarPayloadCanalTranscricaoV2() {
+  return {
+    components: [{
+      type: 17,
+      accent_color: 0x9b59b6,
+      components: [
+        { type: 10, content: `# 📜 Selecionar canal de Transcrição\n\nEscolha o canal onde as transcrições de tickets serão salvas:` },
+        { type: 14, divider: true, spacing: 1 },
+        {
+          type: 1,
+          components: [{
+            type: 8,
+            custom_id: 'select_log_channel',
+            placeholder: '📜 Selecionar canal de Transcrição',
+            channel_types: [ChannelType.GuildText]
+          }]
+        }
+      ]
+    }],
+    flags: FLAG_V2
+  };
+}
+
 function gerarPayloadAvisoV2(titulo, mensagem, corHex = 0xe74c3c) {
   return {
     components: [{
@@ -677,7 +891,7 @@ function gerarPayloadAvisoV2(titulo, mensagem, corHex = 0xe74c3c) {
 }
 
 // ==========================================
-// INTERAÇÕES E TRATAMENTO DE COMANDOS
+// INTERAÇÕES E PROCESSAMENTO
 // ==========================================
 
 client.on('interactionCreate', async (interaction) => {
@@ -735,11 +949,94 @@ client.on('interactionCreate', async (interaction) => {
         const updated = await updateGuildData(interaction.guild.id, { leaveBanner: rawBanner && rawBanner.trim() !== '' ? rawBanner.trim() : null });
         return interaction.update(gerarPayloadConfigSaidaV2(updated || guildData));
       }
+
+      if (interaction.customId === 'modal_editar_embed_ticket') {
+        const title = interaction.fields.getTextInputValue('input_ticket_title');
+        const description = interaction.fields.getTextInputValue('input_ticket_desc');
+        const color = interaction.fields.getTextInputValue('input_ticket_color');
+        const image = interaction.fields.getTextInputValue('input_ticket_image');
+        const footer = interaction.fields.getTextInputValue('input_ticket_footer');
+
+        const updated = await updateGuildData(interaction.guild.id, {
+          ticketTitle: title,
+          ticketDescription: description,
+          ticketColor: color && color.trim() !== '' ? color.trim() : '#5865F2',
+          ticketBanner: image && image.trim() !== '' ? image.trim() : null,
+          ticketFooter: footer && footer.trim() !== '' ? footer.trim() : '🤖 Organizações • Roleplay | Desenvolvido por Cetus'
+        });
+
+        try {
+          await interaction.message.edit(gerarPayloadPainelTicketPublicoV2(updated || guildData));
+        } catch (e) {}
+
+        return interaction.reply({ ...gerarPayloadAvisoV2('✅ Painel Atualizado', 'As alterações do painel de ticket foram salvas com sucesso!', 0x2ecc71), flags: MessageFlags.Ephemeral });
+      }
     }
 
     // 📌 BOTÕES DE NAVEGAÇÃO
     if (interaction.isButton()) {
       const cid = interaction.customId;
+
+      if (cid === 'btn_config_ticket_main' || cid === 'btn_voltar_config_main') {
+        if (!isDonoOuAdmin(interaction)) {
+          return interaction.reply({ ...gerarPayloadAvisoV2('❌ Acesso Negado', 'Apenas administradores podem configurar o ticket.'), flags: MessageFlags.Ephemeral });
+        }
+        return interaction.isUpdate ? interaction.update(gerarPayloadConfigSistemaTicketsV2()) : interaction.reply({ ...gerarPayloadConfigSistemaTicketsV2(), flags: MessageFlags.Ephemeral });
+      }
+
+      if (cid === 'btn_gerenciar_tipos') {
+        return interaction.update(gerarPayloadGerenciarTiposV2(guildData));
+      }
+
+      if (cid === 'btn_canal_transcricao') {
+        return interaction.update(gerarPayloadCanalTranscricaoV2());
+      }
+
+      if (cid.startsWith('cfgtype_')) {
+        const key = cid.replace('cfgtype_', '');
+        return interaction.update(gerarPayloadConfigTipoIndividualV2(guildData, key));
+      }
+
+      if (cid.startsWith('btncat_')) {
+        const key = cid.replace('btncat_', '');
+        return interaction.update(gerarPayloadConfigTipoIndividualV2(guildData, key, 'select_category'));
+      }
+
+      if (cid.startsWith('btnrole_')) {
+        const key = cid.replace('btnrole_', '');
+        return interaction.update(gerarPayloadConfigTipoIndividualV2(guildData, key, 'select_role'));
+      }
+
+      if (cid.startsWith('btntoggle_')) {
+        const key = cid.replace('btntoggle_', '');
+        const currentActive = guildData.ticketTypes?.[key]?.active || false;
+
+        const updatedTypes = {
+          ...guildData.ticketTypes,
+          [key]: {
+            ...DEFAULT_GUILD_DATA.ticketTypes[key],
+            ...(guildData.ticketTypes?.[key] || {}),
+            active: !currentActive
+          }
+        };
+
+        const updated = await updateGuildData(interaction.guild.id, { ticketTypes: updatedTypes });
+        return interaction.update(gerarPayloadConfigTipoIndividualV2(updated || guildData, key));
+      }
+
+      if (cid === 'btn_editar_embed_ticket') {
+        const modal = new ModalBuilder().setCustomId('modal_editar_embed_ticket').setTitle('Editar Painel do Ticket');
+        
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('input_ticket_title').setLabel('Título').setStyle(TextInputStyle.Short).setValue(guildData.ticketTitle || '').setRequired(true)),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('input_ticket_desc').setLabel('Descrição').setStyle(TextInputStyle.Paragraph).setValue(guildData.ticketDescription || '').setRequired(true)),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('input_ticket_color').setLabel('Cor (HEX)').setStyle(TextInputStyle.Short).setValue(guildData.ticketColor || '#5865F2').setRequired(false)),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('input_ticket_image').setLabel('Imagem (URL)').setStyle(TextInputStyle.Short).setValue(guildData.ticketBanner || '').setRequired(false)),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('input_ticket_footer').setLabel('Footer (Texto do Rodapé)').setStyle(TextInputStyle.Short).setValue(guildData.ticketFooter || '').setRequired(false))
+        );
+
+        return interaction.showModal(modal);
+      }
 
       if (cid === 'btn_nav_menu_main') return interaction.update(gerarPayloadVisaoGeralBoasVindasV2(guildData));
       if (cid === 'btn_nav_entrada') return interaction.update(gerarPayloadConfigEntradaV2(guildData));
@@ -833,12 +1130,125 @@ client.on('interactionCreate', async (interaction) => {
       if (cid === 'btn_testar_boost') {
         return interaction.reply({ ...gerarPayloadAvisoV2('🧪 Teste Disparado', 'Mensagem de boost simulada com sucesso!', 0x5865f2), flags: MessageFlags.Ephemeral });
       }
+
+      if (cid === 'btn_close_ticket') {
+        await interaction.reply({ ...gerarPayloadAvisoV2('🔒 Encerrando Ticket', 'Gerando transcrição e excluindo o canal em 5 segundos...', 0xe67e22) });
+
+        try {
+          const fetchedMessages = await interaction.channel.messages.fetch({ limit: 100 });
+          const formattedLogs = fetchedMessages
+            .reverse()
+            .map(m => `[${new Date(m.createdAt).toLocaleString('pt-BR')}] ${m.author.tag}: ${m.content}`)
+            .join('\n');
+
+          const buffer = Buffer.from(formattedLogs, 'utf-8');
+          const attachment = new AttachmentBuilder(buffer, { name: `transcricao-${interaction.channel.name}.txt` });
+
+          if (guildData.logChannel) {
+            const logChan = interaction.guild.channels.cache.get(guildData.logChannel);
+            if (logChan) {
+              const payloadLog = {
+                components: [{
+                  type: 17,
+                  accent_color: 0xfee75c,
+                  components: [
+                    { type: 10, content: `# 📝 Transcrição de Ticket Encerrado\n\n📁 **Canal:** \`${interaction.channel.name}\`\n👤 **Encerrado Por:** ${interaction.user}` }
+                  ]
+                }],
+                flags: FLAG_V2
+              };
+
+              await logChan.send({ ...payloadLog, files: [attachment] }).catch(() => {});
+            }
+          }
+        } catch (err) {
+          console.error('[ERRO TRANSCRIÇÃO]:', err);
+        }
+
+        setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+      }
+    }
+
+    // 📌 SELETORES DE STRING (CATEGORIA TICKET PÚBLICO)
+    if (interaction.isStringSelectMenu()) {
+      if (interaction.customId === 'select_categoria_ticket_publico') {
+        const val = interaction.values[0];
+        const key = val.replace('tipo_', '');
+        const typeObj = guildData.ticketTypes?.[key];
+
+        if (!typeObj || !typeObj.category) {
+          return interaction.reply({ ...gerarPayloadAvisoV2('❌ Categoria Não Configurada', 'A categoria deste tipo de ticket ainda não foi configurada pelo administrador.'), flags: MessageFlags.Ephemeral });
+        }
+
+        const safeUsername = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const channelName = `ticket-${safeUsername || interaction.user.id}`;
+
+        const existingChannel = interaction.guild.channels.cache.find(c => c.name === channelName);
+        if (existingChannel) {
+          return interaction.reply({ ...gerarPayloadAvisoV2('⚠️ Ticket Já Existente', `Você já possui um ticket aberto em ${existingChannel}!`, 0xf1c40f), flags: MessageFlags.Ephemeral });
+        }
+
+        const permissionOverwrites = [
+          { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+          { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] }
+        ];
+
+        if (typeObj.role) {
+          permissionOverwrites.push({
+            id: typeObj.role,
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles]
+          });
+        }
+
+        const channel = await interaction.guild.channels.create({
+          name: channelName,
+          type: ChannelType.GuildText,
+          parent: typeObj.category,
+          permissionOverwrites
+        });
+
+        const payloadTicketTicket = {
+          components: [{
+            type: 17,
+            accent_color: 0x3498db,
+            components: [
+              { type: 10, content: `# 🎟️ Ticket de ${interaction.user.username}\n\n📌 **Categoria:** \`${typeObj.label}\`\n👋 Olá ${interaction.user}, descreva sua solicitação no chat. Nossa equipe irá te atender em breve!` },
+              { type: 14, divider: true, spacing: 1 },
+              {
+                type: 1,
+                components: [
+                  { type: 2, style: 4, custom_id: 'btn_close_ticket', label: 'Fechar & Gerar Transcrição', emoji: { name: '🔒' } }
+                ]
+              }
+            ]
+          }],
+          flags: FLAG_V2
+        };
+
+        await channel.send(payloadTicketTicket);
+        return interaction.reply({ ...gerarPayloadAvisoV2('✅ Ticket Criado', `Seu ticket de **${typeObj.label}** foi aberto em ${channel}`, 0x2ecc71), flags: MessageFlags.Ephemeral });
+      }
     }
 
     // 📌 SELETORES DE CANAL E CARGO
     if (interaction.isChannelSelectMenu()) {
       const val = interaction.values[0];
       const cid = interaction.customId;
+
+      if (cid.startsWith('savecat_')) {
+        const key = cid.replace('savecat_', '');
+        const updatedTypes = {
+          ...guildData.ticketTypes,
+          [key]: {
+            ...DEFAULT_GUILD_DATA.ticketTypes[key],
+            ...(guildData.ticketTypes?.[key] || {}),
+            category: val
+          }
+        };
+
+        const updated = await updateGuildData(interaction.guild.id, { ticketTypes: updatedTypes });
+        return interaction.update(gerarPayloadConfigTipoIndividualV2(updated || guildData, key));
+      }
 
       if (cid === 'select_welcome_channel') {
         const updated = await updateGuildData(interaction.guild.id, { welcomeChannel: val, welcomeActive: true });
@@ -859,11 +1269,31 @@ client.on('interactionCreate', async (interaction) => {
         const updated = await updateGuildData(interaction.guild.id, { invitesChannel: val, invitesActive: true });
         return interaction.update(gerarPayloadConfigConvitesV2(updated || guildData));
       }
+
+      if (cid === 'select_log_channel') {
+        await updateGuildData(interaction.guild.id, { logChannel: val });
+        return interaction.reply({ ...gerarPayloadAvisoV2('✅ Canal Salvo', `Canal de Transcrição/Logs definido para <#${val}>!`, 0x2ecc71), flags: MessageFlags.Ephemeral });
+      }
     }
 
     if (interaction.isRoleSelectMenu()) {
       const val = interaction.values[0];
       const cid = interaction.customId;
+
+      if (cid.startsWith('saverole_')) {
+        const key = cid.replace('saverole_', '');
+        const updatedTypes = {
+          ...guildData.ticketTypes,
+          [key]: {
+            ...DEFAULT_GUILD_DATA.ticketTypes[key],
+            ...(guildData.ticketTypes?.[key] || {}),
+            role: val
+          }
+        };
+
+        const updated = await updateGuildData(interaction.guild.id, { ticketTypes: updatedTypes });
+        return interaction.update(gerarPayloadConfigTipoIndividualV2(updated || guildData, key));
+      }
 
       if (cid === 'select_autorole') {
         const updated = await updateGuildData(interaction.guild.id, { autoRole: val });
@@ -877,7 +1307,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // ==========================================
-// EVENTOS AUTOMÁTICOS DE DISPARO
+// EVENTOS AUTOMÁTICOS
 // ==========================================
 
 function formatVariables(text, member, guild) {
